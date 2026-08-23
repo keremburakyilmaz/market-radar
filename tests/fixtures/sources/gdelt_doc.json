@@ -1,0 +1,30 @@
+{
+  "articles": [
+    {
+      "url": "https://example.com/macro/story?utm_source=gdelt&id=7#section",
+      "title": "Central bank holds rates",
+      "seendate": "20260823T141500Z",
+      "domain": "Example.com",
+      "language": "English",
+      "sourcecountry": "United States",
+      "socialimage": "https://example.com/licensed-image.jpg",
+      "body": "This publisher text must not enter the model."
+    },
+    {
+      "url": "https://example.com/macro/story?id=7&utm_campaign=duplicate",
+      "title": "Central bank holds rates - updated",
+      "seendate": "20260823T143000Z",
+      "domain": "example.com",
+      "language": "English",
+      "sourcecountry": "United States"
+    },
+    {
+      "url": "https://news.example.tr/economy/lira",
+      "title": "Lira markets await policy decision",
+      "seendate": "20260823T140000Z",
+      "domain": "news.example.tr",
+      "language": "Turkish",
+      "sourcecountry": "Turkey"
+    }
+  ]
+}

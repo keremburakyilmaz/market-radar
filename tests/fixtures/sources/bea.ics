@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//U.S. BEA//Release Calendar//EN
+BEGIN:VEVENT
+UID:bea-gdp-20260827
+DTSTART;TZID=Eastern Standard Time:20260827T083000
+SUMMARY:Gross Domestic Product\, 2nd Estimate and Corporate Profits
+  (Preliminary)
+URL:https://www.bea.gov/news/2026/gross-domestic-product-second-estimate
+END:VEVENT
+BEGIN:VEVENT
+UID:bea-pce-20260828
+DTSTART:20260828T123000Z
+SUMMARY:Personal Income and Outlays
+URL:https://www.bea.gov/news/2026/personal-income-and-outlays-july-2026
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR

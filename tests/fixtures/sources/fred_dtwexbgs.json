@@ -1,0 +1,20 @@
+{
+  "realtime_start": "2026-08-23",
+  "realtime_end": "2026-08-23",
+  "observation_start": "1600-01-01",
+  "observation_end": "9999-12-31",
+  "units": "lin",
+  "output_type": 1,
+  "file_type": "json",
+  "order_by": "observation_date",
+  "sort_order": "asc",
+  "count": 4,
+  "offset": 0,
+  "limit": 90,
+  "observations": [
+    {"date": "2026-08-18", "value": "121.4421"},
+    {"date": "2026-08-19", "value": "."},
+    {"date": "2026-08-20", "value": "121.1033"},
+    {"date": "2026-08-21", "value": "120.9987"}
+  ]
+}

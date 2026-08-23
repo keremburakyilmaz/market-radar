@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
+      xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices">
+  <entry>
+    <content type="application/xml">
+      <m:properties>
+        <d:NEW_DATE m:type="Edm.DateTime">2026-08-20T00:00:00</d:NEW_DATE>
+        <d:BC_2YEAR m:type="Edm.Double">3.75</d:BC_2YEAR>
+        <d:BC_10YEAR m:type="Edm.Double">4.20</d:BC_10YEAR>
+      </m:properties>
+    </content>
+  </entry>
+  <entry>
+    <content type="application/xml">
+      <m:properties>
+        <d:NEW_DATE m:type="Edm.DateTime">2026-08-21T00:00:00</d:NEW_DATE>
+        <d:BC_2YEAR m:type="Edm.Double">3.80</d:BC_2YEAR>
+        <d:BC_10YEAR m:type="Edm.Double">4.25</d:BC_10YEAR>
+      </m:properties>
+    </content>
+  </entry>
+</feed>

@@ -1,0 +1,19 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//U.S. BLS//Release Calendar//EN
+BEGIN:VEVENT
+UID:bls-cpi-20260811
+DTSTART;TZID=America/New_York:20260811T083000
+DTEND;TZID=America/New_York:20260811T090000
+SUMMARY:Consumer Price Index
+URL:https://www.bls.gov/news.release/cpi.nr0.htm
+STATUS:CONFIRMED
+DESCRIPTION:Long descriptive content is ignored.
+END:VEVENT
+BEGIN:VEVENT
+UID:bls-cancelled
+DTSTART;TZID=America/New_York:20260814T083000
+SUMMARY:Cancelled release
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR

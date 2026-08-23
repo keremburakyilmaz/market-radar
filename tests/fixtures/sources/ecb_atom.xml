@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ECB press releases</title>
+  <entry>
+    <title>Monetary policy decisions</title>
+    <link rel="alternate" href="/press/pr/date/2026/html/ecb.mp260821~example.en.html" />
+    <published>2026-08-21T12:15:00Z</published>
+    <category term="Monetary policy" />
+    <content>Full release text is deliberately ignored.</content>
+  </entry>
+</feed>
