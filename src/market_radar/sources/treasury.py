@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Dict, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from .base import (
     HttpClient,
@@ -60,8 +61,12 @@ class TreasuryYieldAdapter:
         observations: Dict[Tuple[datetime, str], IndicatorObservation] = {}
         partial = False
 
-        entries = [element for element in root.iter() if _local(element.tag) == "entry"]
-        if not entries and _local(root.tag) == "entry":
+        entries = [
+            element
+            for element in root.iter()
+            if _local(element.tag) in {"entry", "G_NEW_DATE"}
+        ]
+        if not entries and _local(root.tag) in {"entry", "G_NEW_DATE"}:
             entries = [root]
 
         for entry in entries:
@@ -130,14 +135,27 @@ def _local(tag: str) -> str:
 
 
 def _parse_treasury_date(value: str) -> datetime:
-    normalized = value.strip().replace("Z", "+00:00")
+    raw = value.strip()
+    normalized = raw.replace("Z", "+00:00")
     try:
-        parsed = datetime.fromisoformat(normalized)
+        observed_date = datetime.fromisoformat(normalized).date()
     except ValueError:
-        parsed = datetime.strptime(value.strip()[:10], "%Y-%m-%d")
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        observed_date = _parse_date_only(raw)
+
+    # Treasury publishes each business day's indicative yields at about
+    # 3:30 p.m. Eastern. NEW_DATE is a date field even when older feeds encode
+    # it as midnight, so attach the publication time explicitly.
+    eastern = ZoneInfo("America/New_York")
+    return datetime.combine(observed_date, time(15, 30), eastern).astimezone(UTC)
+
+
+def _parse_date_only(value: str) -> date:
+    for pattern in ("%m-%d-%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%b-%y"):
+        try:
+            return datetime.strptime(value[:11], pattern).date()
+        except ValueError:
+            continue
+    raise ValueError("unsupported Treasury observation date")
 
 
 def _optional_decimal(value: Optional[str]) -> Optional[Decimal]:

@@ -84,6 +84,27 @@ class IndicatorSourceTests(unittest.TestCase):
         self.assertEqual(result.error_code, "STALE_DATA")
         self.assertTrue(result.items)
 
+    def test_treasury_reads_current_grouped_xml_shape(self):
+        retrieved = datetime(2026, 8, 4, 21, 0, tzinfo=UTC)
+        result = TreasuryYieldAdapter(
+            FixtureClient("treasury_yield_current.xml")
+        ).fetch(retrieved)
+
+        self.assertEqual(result.status, SourceStatus.OK)
+        self.assertEqual(len(result.items), 6)
+        latest = {
+            item.indicator_id: item
+            for item in result.items
+            if item.observed_at.date().isoformat() == "2026-08-04"
+        }
+        self.assertEqual(latest["us-treasury-2y"].value, Decimal("4.20"))
+        self.assertEqual(latest["us-treasury-10y"].value, Decimal("4.68"))
+        self.assertEqual(latest["us-curve-2s10s"].value, Decimal("48.00"))
+        self.assertEqual(
+            latest["us-curve-2s10s"].observed_at,
+            datetime(2026, 8, 4, 19, 30, tzinfo=UTC),
+        )
+
     def test_cbrt_reads_only_usd_forex_buying(self):
         result = CbrtUsdTryAdapter(FixtureClient("cbrt_today.xml")).fetch(RETRIEVED)
 
