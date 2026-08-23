@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -303,18 +304,22 @@ def _normalize_releases(
     output = []
     for item in result.items:
         timestamp = item.published_at or item.seen_at
-        if timestamp is None or urlparse(item.url).scheme != "https":
+        if (
+            timestamp is None
+            or urlparse(item.url).scheme != "https"
+            or len(item.url) > 500
+        ):
             continue
         kind = item.kind.value if isinstance(item.kind, ReleaseKind) else str(item.kind)
         output.append(
             CollectedRelease(
                 release_id=_stable_id("release", item.url),
-                title=item.title[:300],
+                title=_plain_text(item.title)[:300],
                 url=item.url,
                 published_at=timestamp,
                 retrieved_at=result.retrieved_at,
                 source=job.source,
-                publisher=item.publisher,
+                publisher=_plain_text(item.publisher)[:80],
                 kind=kind,
                 category=(item.category or "macro")[:80],
                 market_tags=job.market_tags,
@@ -336,7 +341,7 @@ def _normalize_calendar(
         output.append(
             CollectedCalendarEvent(
                 event_id=_stable_id("event", "{}|{}".format(job.job_id, item.event_id)),
-                name=item.title[:200],
+                name=_plain_text(item.title)[:200],
                 scheduled_at=item.scheduled_at,
                 authority=item.authority,
                 region=item.region,
@@ -370,3 +375,8 @@ def _freshness(result: SourceResult[Any]) -> str:
 
 def _stable_id(prefix: str, value: str) -> str:
     return "{}-{}".format(prefix, hashlib.sha256(value.encode("utf-8")).hexdigest()[:16])
+
+
+def _plain_text(value: str) -> str:
+    without_markup = re.sub(r"<[^>]*>", " ", value)
+    return " ".join(without_markup.replace("<", " ").replace(">", " ").split())

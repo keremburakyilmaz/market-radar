@@ -10,10 +10,12 @@ from enum import Enum
 from typing import Generic, Mapping, Optional, Protocol, Tuple, TypeVar
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+import time
 
 
 UTC = timezone.utc
 T = TypeVar("T")
+MAX_RESPONSE_BYTES = 5_000_000
 
 
 class SourceStatus(str, Enum):
@@ -138,9 +140,12 @@ class UrllibHttpClient:
         request = Request(url, headers=dict(headers or {}), method="GET")
         try:
             with urlopen(request, timeout=timeout) as response:
+                body = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(body) > MAX_RESPONSE_BYTES:
+                    raise ValueError("response exceeds the configured byte limit")
                 return HttpResponse(
                     status=int(response.status),
-                    body=response.read(),
+                    body=body,
                     headers=dict(response.headers.items()),
                 )
         except HTTPError as error:
@@ -257,6 +262,7 @@ def retrieve(
     *,
     headers: Optional[Mapping[str, str]] = None,
     timeout: float = 20.0,
+    attempts: int = 3,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     """Retrieve bytes and collapse all failures to non-sensitive codes."""
 
@@ -264,22 +270,34 @@ def retrieve(
         "User-Agent": "MarketRadar/1.0 (+https://github.com/keremburakyilmaz)",
         **dict(headers or {}),
     }
-    try:
-        response = client.get(request_url, headers=request_headers, timeout=timeout)
-    except Exception:
-        return None, "NETWORK_ERROR"
+    if attempts < 1 or attempts > 5:
+        raise ValueError("attempts must be between one and five")
 
-    if 200 <= response.status < 300:
-        return response.body, None
-    if response.status in (401, 403):
-        return None, "AUTH_ERROR"
-    if response.status == 404:
-        return None, "NOT_FOUND"
-    if response.status == 429:
-        return None, "RATE_LIMITED"
-    if response.status >= 500:
-        return None, "UPSTREAM_ERROR"
-    return None, "HTTP_ERROR"
+    last_code = "NETWORK_ERROR"
+    for attempt in range(attempts):
+        try:
+            response = client.get(request_url, headers=request_headers, timeout=timeout)
+        except Exception:
+            last_code = "NETWORK_ERROR"
+        else:
+            if len(response.body) > MAX_RESPONSE_BYTES:
+                return None, "RESPONSE_TOO_LARGE"
+            if 200 <= response.status < 300:
+                return response.body, None
+            if response.status in (401, 403):
+                return None, "AUTH_ERROR"
+            if response.status == 404:
+                return None, "NOT_FOUND"
+            if response.status == 429:
+                last_code = "RATE_LIMITED"
+            elif response.status >= 500:
+                last_code = "UPSTREAM_ERROR"
+            else:
+                return None, "HTTP_ERROR"
+
+        if attempt < attempts - 1 and isinstance(client, UrllibHttpClient):
+            time.sleep(0.25 * (attempt + 1))
+    return None, last_code
 
 
 def _require_aware(value: datetime, name: str) -> None:

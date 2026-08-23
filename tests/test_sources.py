@@ -14,9 +14,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from market_radar.sources.base import (  # noqa: E402
     Freshness,
     HttpResponse,
+    MAX_RESPONSE_BYTES,
     ReleaseKind,
     SourceStatus,
     error_result,
+    retrieve,
 )
 from market_radar.sources.calendar import (  # noqa: E402
     bea_calendar_adapter,
@@ -190,6 +192,17 @@ class ReleaseSourceTests(unittest.TestCase):
 
         self.assertEqual(result.error_code, "SOURCE_ERROR")
         self.assertNotIn("do-not-leak", repr(result))
+
+    def test_oversized_response_is_rejected_before_parsing(self):
+        client = FixtureClient()
+        client.get = lambda *args, **kwargs: HttpResponse(
+            200, b"x" * (MAX_RESPONSE_BYTES + 1), {}
+        )
+
+        body, error = retrieve(client, "https://example.com/large")
+
+        self.assertIsNone(body)
+        self.assertEqual(error, "RESPONSE_TOO_LARGE")
 
     def assert_result_ok(self, result):
         self.assertEqual(result.retrieved_at, RETRIEVED)
