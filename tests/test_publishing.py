@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,7 @@ from market_radar.publishing import (  # noqa: E402
     LATEST_KEY,
     POINTER_CACHE_CONTROL,
     SNAPSHOT_CACHE_CONTROL,
+    Boto3R2ObjectStore,
     LocalObjectStore,
     ObjectStoreConflictError,
     PublishConflictError,
@@ -48,6 +50,45 @@ def valid_publisher(store):
         store,
         clock=lambda: datetime(2030, 1, 15, 13, 0, tzinfo=timezone.utc),
     )
+
+
+class FakeS3Error(RuntimeError):
+    def __init__(self, status, code):
+        self.response = {
+            "ResponseMetadata": {"HTTPStatusCode": status},
+            "Error": {"Code": code},
+        }
+
+
+class FakeS3Client:
+    def __init__(self):
+        self.objects = {}
+        self.put_calls = []
+        self.put_error = None
+
+    def get_object(self, *, Bucket, Key):
+        value = self.objects.get((Bucket, Key))
+        if value is None:
+            raise FakeS3Error(404, "NoSuchKey")
+        return {
+            "Body": BytesIO(value["Body"]),
+            "ETag": value["ETag"],
+            "ContentType": value["ContentType"],
+            "CacheControl": value["CacheControl"],
+        }
+
+    def put_object(self, **arguments):
+        self.put_calls.append(arguments)
+        if self.put_error is not None:
+            raise self.put_error
+        value = {
+            "Body": arguments["Body"],
+            "ETag": '"remote-etag"',
+            "ContentType": arguments["ContentType"],
+            "CacheControl": arguments["CacheControl"],
+        }
+        self.objects[(arguments["Bucket"], arguments["Key"])] = value
+        return {"ETag": value["ETag"]}
 
 
 class DelegatingStore:
@@ -212,6 +253,62 @@ class PublishingTests(unittest.TestCase):
             if_match=first.etag,
         )
         self.assertNotEqual(first.etag, second.etag)
+
+    def test_r2_store_maps_conditional_puts_and_object_metadata(self) -> None:
+        client = FakeS3Client()
+        store = Boto3R2ObjectStore(
+            bucket="market-radar-public",
+            endpoint_url="https://account.r2.cloudflarestorage.com",
+            access_key_id="access",
+            secret_access_key="secret",
+            client=client,
+        )
+
+        created = store.put(
+            "v1/latest.json",
+            b"first",
+            content_type=JSON_CONTENT_TYPE,
+            cache_control=POINTER_CACHE_CONTROL,
+            if_none_match=True,
+        )
+        replaced = store.put(
+            "v1/latest.json",
+            b"second",
+            content_type=JSON_CONTENT_TYPE,
+            cache_control=POINTER_CACHE_CONTROL,
+            if_match=created.etag,
+        )
+        loaded = store.get("v1/latest.json")
+
+        self.assertEqual(client.put_calls[0]["IfNoneMatch"], "*")
+        self.assertNotIn("IfMatch", client.put_calls[0])
+        self.assertEqual(client.put_calls[1]["IfMatch"], '"remote-etag"')
+        self.assertNotIn("IfNoneMatch", client.put_calls[1])
+        self.assertEqual(replaced.etag, '"remote-etag"')
+        self.assertEqual(loaded.body, b"second")
+        self.assertEqual(loaded.content_type, JSON_CONTENT_TYPE)
+        self.assertEqual(loaded.cache_control, POINTER_CACHE_CONTROL)
+
+    def test_r2_store_translates_missing_and_precondition_failures(self) -> None:
+        client = FakeS3Client()
+        store = Boto3R2ObjectStore(
+            bucket="market-radar-public",
+            endpoint_url="https://account.r2.cloudflarestorage.com",
+            access_key_id="access",
+            secret_access_key="secret",
+            client=client,
+        )
+        self.assertIsNone(store.get("v1/missing.json"))
+        client.put_error = FakeS3Error(412, "PreconditionFailed")
+
+        with self.assertRaises(ObjectStoreConflictError):
+            store.put(
+                "v1/latest.json",
+                b"body",
+                content_type=JSON_CONTENT_TYPE,
+                cache_control=POINTER_CACHE_CONTROL,
+                if_none_match=True,
+            )
 
     def test_promotes_only_a_verified_existing_immutable_snapshot(self) -> None:
         publisher = valid_publisher(self.store)

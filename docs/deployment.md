@@ -36,6 +36,12 @@ its corresponding bucket. Do not use an account-wide Admin token. R2's S3
 region is `auto`; the endpoint is
 `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com`.
 
+Atomic pointer changes depend on `If-Match` and `If-None-Match` for
+`PutObject`. Cloudflare currently marks both conditional operations as
+supported in its [S3 compatibility table](https://developers.cloudflare.com/r2/api/s3/api/).
+Do not deploy against an alternative object store unless it passes the same
+precondition and readback tests.
+
 Connect `market-radar-public` to the R2 custom domain
 `radar-data.keremburakyilmaz.com`. Do not point a CNAME at an `r2.dev` URL.
 Disable the public `r2.dev` development URL after the custom domain is active.
