@@ -5,25 +5,25 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 from market_radar.canonical import canonical_json_bytes
-
 
 STATE_VERSION = 1
 
 
 @dataclass(frozen=True)
 class RadarState:
-    previous_snapshot_id: Optional[str] = None
+    previous_snapshot_id: str | None = None
     indicator_values: Mapping[str, float] = field(default_factory=dict)
     indicator_records: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
-    seen_release_urls: Tuple[str, ...] = ()
-    successful_slots: Tuple[str, ...] = ()
+    seen_release_urls: tuple[str, ...] = ()
+    successful_slots: tuple[str, ...] = ()
 
-    def public_dict(self) -> dict:
+    def public_dict(self) -> dict[str, Any]:
         return {
             "stateVersion": STATE_VERSION,
             "previousSnapshotId": self.previous_snapshot_id,
@@ -36,7 +36,7 @@ class RadarState:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "RadarState":
+    def from_dict(cls, value: Mapping[str, Any]) -> RadarState:
         if value.get("stateVersion") != STATE_VERSION:
             raise ValueError("unsupported state version")
         raw_values = value.get("indicatorValues", {})
@@ -67,9 +67,9 @@ class RadarState:
                 for key, record in raw_records.items()
                 if isinstance(record, dict)
             },
-            seen_release_urls=tuple(
-                str(item) for item in raw_urls if isinstance(item, str)
-            )[-2000:],
+            seen_release_urls=tuple(str(item) for item in raw_urls if isinstance(item, str))[
+                -2000:
+            ],
             successful_slots=tuple(str(item) for item in raw_slots if isinstance(item, str))[-500:],
         )
 
@@ -101,4 +101,4 @@ def save_state(path: Path, state: RadarState) -> None:
 
 
 def _reject_constant(value: str) -> None:
-    raise ValueError("non-finite state value is not allowed: {}".format(value))
+    raise ValueError(f"non-finite state value is not allowed: {value}")

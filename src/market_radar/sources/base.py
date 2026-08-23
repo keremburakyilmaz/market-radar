@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Generic, Mapping, Optional, Protocol, Tuple, TypeVar
+from typing import Generic, Protocol, TypeVar
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-import time
-
 
 UTC = timezone.utc
 T = TypeVar("T")
@@ -58,13 +58,13 @@ class Release:
     title: str
     url: str
     publisher: str
-    published_at: Optional[datetime] = None
-    seen_at: Optional[datetime] = None
-    category: Optional[str] = None
+    published_at: datetime | None = None
+    seen_at: datetime | None = None
+    category: str | None = None
     kind: ReleaseKind = ReleaseKind.OFFICIAL
-    domain: Optional[str] = None
-    language: Optional[str] = None
-    source_country: Optional[str] = None
+    domain: str | None = None
+    language: str | None = None
+    source_country: str | None = None
 
     def __post_init__(self) -> None:
         if self.published_at is not None:
@@ -80,8 +80,8 @@ class CalendarEvent:
     scheduled_at: datetime
     authority: str
     region: str
-    event_url: Optional[str] = None
-    ends_at: Optional[datetime] = None
+    event_url: str | None = None
+    ends_at: datetime | None = None
     tentative: bool = False
 
     def __post_init__(self) -> None:
@@ -94,18 +94,16 @@ class CalendarEvent:
 class SourceResult(Generic[T]):
     """Typed source output with provenance and a safe machine error code."""
 
-    items: Tuple[T, ...]
+    items: tuple[T, ...]
     retrieved_at: datetime
     source_url: str
     freshness: Freshness
     status: SourceStatus
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
     def __post_init__(self) -> None:
         _require_aware(self.retrieved_at, "retrieved_at")
-        if self.error_code is not None and self.error_code != sanitize_error_code(
-            self.error_code
-        ):
+        if self.error_code is not None and self.error_code != sanitize_error_code(self.error_code):
             raise ValueError("error_code must already be sanitized")
 
 
@@ -121,10 +119,9 @@ class HttpClient(Protocol):
         self,
         url: str,
         *,
-        headers: Optional[Mapping[str, str]] = None,
+        headers: Mapping[str, str] | None = None,
         timeout: float = 20.0,
-    ) -> HttpResponse:
-        ...
+    ) -> HttpResponse: ...
 
 
 class UrllibHttpClient:
@@ -134,7 +131,7 @@ class UrllibHttpClient:
         self,
         url: str,
         *,
-        headers: Optional[Mapping[str, str]] = None,
+        headers: Mapping[str, str] | None = None,
         timeout: float = 20.0,
     ) -> HttpResponse:
         request = Request(url, headers=dict(headers or {}), method="GET")
@@ -192,7 +189,7 @@ def utc_now() -> datetime:
     return datetime.now(tz=UTC)
 
 
-def normalize_retrieved_at(value: Optional[datetime]) -> datetime:
+def normalize_retrieved_at(value: datetime | None) -> datetime:
     if value is None:
         return utc_now()
     _require_aware(value, "retrieved_at")
@@ -215,13 +212,13 @@ def error_result(
 
 
 def success_result(
-    items: Tuple[T, ...],
+    items: tuple[T, ...],
     source_url: str,
     retrieved_at: datetime,
     *,
-    latest_observed_at: Optional[datetime] = None,
-    max_age: Optional[timedelta] = None,
-    degraded_code: Optional[str] = None,
+    latest_observed_at: datetime | None = None,
+    max_age: timedelta | None = None,
+    degraded_code: str | None = None,
 ) -> SourceResult[T]:
     if not items:
         return error_result(source_url, retrieved_at, "EMPTY_RESULT")
@@ -260,10 +257,10 @@ def retrieve(
     client: HttpClient,
     request_url: str,
     *,
-    headers: Optional[Mapping[str, str]] = None,
+    headers: Mapping[str, str] | None = None,
     timeout: float = 20.0,
     attempts: int = 3,
-) -> Tuple[Optional[bytes], Optional[str]]:
+) -> tuple[bytes | None, str | None]:
     """Retrieve bytes and collapse all failures to non-sensitive codes."""
 
     request_headers = {
@@ -302,4 +299,4 @@ def retrieve(
 
 def _require_aware(value: datetime, name: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("{} must be timezone-aware".format(name))
+        raise ValueError(f"{name} must be timezone-aware")

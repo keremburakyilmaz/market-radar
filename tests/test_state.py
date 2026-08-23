@@ -24,7 +24,7 @@ class StateTests(unittest.TestCase):
                         "value": 4.31,
                     }
                 },
-                seen_release_urls=tuple("https://example.com/{}".format(index) for index in range(2005)),
+                seen_release_urls=tuple(f"https://example.com/{index}" for index in range(2005)),
                 successful_slots=("2026-08-23T12",),
             )
 

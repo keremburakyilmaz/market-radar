@@ -12,7 +12,7 @@ from .base import (
     SourceStatus,
     UrllibHttpClient,
 )
-from .calendar import bea_calendar_adapter, bls_calendar_adapter, IcsCalendarAdapter
+from .calendar import IcsCalendarAdapter, bea_calendar_adapter, bls_calendar_adapter
 from .cbrt import CbrtUsdTryAdapter
 from .feeds import (
     FeedAdapter,

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from market_radar.domain import (
@@ -44,8 +45,8 @@ class CollectionJob:
     kind: str
     adapter: Any
     source: SourceDescriptor
-    market_tags: Tuple[str, ...] = ("global",)
-    calendar_keywords: Tuple[str, ...] = ()
+    market_tags: tuple[str, ...] = ("global",)
+    calendar_keywords: tuple[str, ...] = ()
 
 
 _INDICATOR_LABELS = {
@@ -57,17 +58,15 @@ _INDICATOR_LABELS = {
 }
 
 
-def _source(
-    source_id: str, name: str, url: str, license_class: str
-) -> SourceDescriptor:
+def _source(source_id: str, name: str, url: str, license_class: str) -> SourceDescriptor:
     return SourceDescriptor(source_id, name, url, license_class)
 
 
 def default_jobs(
     *,
     client: HttpClient,
-    fred_api_key: Optional[str],
-) -> Tuple[CollectionJob, ...]:
+    fred_api_key: str | None,
+) -> tuple[CollectionJob, ...]:
     treasury = TreasuryYieldAdapter(client)
     cbrt_rate = CbrtUsdTryAdapter(client)
     fred = FredBroadUsdAdapter(client, fred_api_key)
@@ -82,7 +81,7 @@ def default_jobs(
     )
     gdelt_turkey = GdeltDocAdapter(
         client,
-        '(Turkey OR Turkish OR lira OR CBRT) sourcelang:english',
+        "(Turkey OR Turkish OR lira OR CBRT) sourcelang:english",
     )
 
     return (
@@ -207,16 +206,16 @@ def default_jobs(
 def collect_sources(
     *,
     at: datetime,
-    fred_api_key: Optional[str],
-    client: Optional[HttpClient] = None,
-    jobs: Optional[Sequence[CollectionJob]] = None,
+    fred_api_key: str | None,
+    client: HttpClient | None = None,
+    jobs: Sequence[CollectionJob] | None = None,
     max_workers: int = 6,
 ) -> CollectionBundle:
     if at.tzinfo is None:
         raise ValueError("collection timestamp must be timezone-aware")
     http_client = client or UrllibHttpClient()
     collection_jobs = tuple(jobs or default_jobs(client=http_client, fred_api_key=fred_api_key))
-    results = {}
+    results: dict[str, SourceResult[Any]] = {}
     with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(collection_jobs)))) as executor:
         futures = {executor.submit(job.adapter.fetch, at): job for job in collection_jobs}
         for future in as_completed(futures):
@@ -233,11 +232,11 @@ def collect_sources(
                     error_code="ADAPTER_ERROR",
                 )
 
-    indicators: List[CollectedIndicator] = []
-    releases: List[CollectedRelease] = []
-    calendar: List[CollectedCalendarEvent] = []
-    health: List[CollectedSourceHealth] = []
-    histories = {}
+    indicators: list[CollectedIndicator] = []
+    releases: list[CollectedRelease] = []
+    calendar: list[CollectedCalendarEvent] = []
+    health: list[CollectedSourceHealth] = []
+    histories: dict[str, list[CollectedIndicator]] = {}
 
     for job in collection_jobs:
         result = results[job.job_id]
@@ -260,7 +259,7 @@ def collect_sources(
         elif job.kind == "calendar":
             calendar.extend(_normalize_calendar(job, result))
         else:
-            raise ValueError("unsupported collection job kind: {}".format(job.kind))
+            raise ValueError(f"unsupported collection job kind: {job.kind}")
 
     return CollectionBundle(
         indicators=tuple(indicators),
@@ -273,7 +272,7 @@ def collect_sources(
 
 def _normalize_indicators(
     job: CollectionJob, result: SourceResult[IndicatorObservation]
-) -> List[CollectedIndicator]:
+) -> list[CollectedIndicator]:
     output = []
     freshness = _freshness(result)
     for item in result.items:
@@ -300,15 +299,11 @@ def _normalize_indicators(
 
 def _normalize_releases(
     job: CollectionJob, result: SourceResult[Release]
-) -> List[CollectedRelease]:
+) -> list[CollectedRelease]:
     output = []
     for item in result.items:
         timestamp = item.published_at or item.seen_at
-        if (
-            timestamp is None
-            or urlparse(item.url).scheme != "https"
-            or len(item.url) > 500
-        ):
+        if timestamp is None or urlparse(item.url).scheme != "https" or len(item.url) > 500:
             continue
         kind = item.kind.value if isinstance(item.kind, ReleaseKind) else str(item.kind)
         output.append(
@@ -330,7 +325,7 @@ def _normalize_releases(
 
 def _normalize_calendar(
     job: CollectionJob, result: SourceResult[CalendarEvent]
-) -> List[CollectedCalendarEvent]:
+) -> list[CollectedCalendarEvent]:
     output = []
     for item in result.items:
         normalized_title = item.title.lower()
@@ -340,7 +335,7 @@ def _normalize_calendar(
             continue
         output.append(
             CollectedCalendarEvent(
-                event_id=_stable_id("event", "{}|{}".format(job.job_id, item.event_id)),
+                event_id=_stable_id("event", f"{job.job_id}|{item.event_id}"),
                 name=_plain_text(item.title)[:200],
                 scheduled_at=item.scheduled_at,
                 authority=item.authority,
@@ -357,12 +352,12 @@ def _normalize_calendar(
 
 def _display_value(indicator_id: str, value: Decimal) -> str:
     if indicator_id in {"us-treasury-2y", "us-treasury-10y"}:
-        return "{:.2f}%".format(value)
+        return f"{value:.2f}%"
     if indicator_id == "us-curve-2s10s":
-        return "{:+.0f} bp".format(value)
+        return f"{value:+.0f} bp"
     if indicator_id == "cbrt-usd-try":
-        return "{:.4f}".format(value)
-    return "{:.2f}".format(value)
+        return f"{value:.4f}"
+    return f"{value:.2f}"
 
 
 def _freshness(result: SourceResult[Any]) -> str:

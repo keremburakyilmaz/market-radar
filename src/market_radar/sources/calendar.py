@@ -3,27 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Mapping
 from datetime import datetime, time
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .base import (
+    UTC,
     CalendarEvent,
     HttpClient,
     SourceResult,
-    UTC,
     error_result,
     normalize_retrieved_at,
     retrieve,
     success_result,
 )
 
-
 BLS_CALENDAR_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
-BEA_CALENDAR_URL = (
-    "https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics"
-)
+BEA_CALENDAR_URL = "https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics"
 
 _WINDOWS_TIMEZONES = {
     "Eastern Standard Time": "America/New_York",
@@ -49,9 +46,7 @@ class IcsCalendarAdapter:
         self.region = region
         self.source_timezone = source_timezone
 
-    def fetch(
-        self, retrieved_at: Optional[datetime] = None
-    ) -> SourceResult[CalendarEvent]:
+    def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[CalendarEvent]:
         retrieved = normalize_retrieved_at(retrieved_at)
         body, request_error = retrieve(
             self.client,
@@ -65,12 +60,10 @@ class IcsCalendarAdapter:
         except Exception:
             return error_result(self.source_url, retrieved, "PARSE_ERROR")
 
-    def parse(
-        self, body: bytes, retrieved_at: datetime
-    ) -> SourceResult[CalendarEvent]:
+    def parse(self, body: bytes, retrieved_at: datetime) -> SourceResult[CalendarEvent]:
         lines = _unfold(body.decode("utf-8-sig"))
         raw_events = _collect_events(lines)
-        events: Dict[str, CalendarEvent] = {}
+        events: dict[str, CalendarEvent] = {}
         partial = False
 
         for raw in raw_events:
@@ -104,9 +97,7 @@ class IcsCalendarAdapter:
 
             title = _unescape(summary)
             uid = _property_value(raw, "UID")
-            event_id = uid.strip() if uid else _stable_id(
-                self.authority, title, scheduled_at
-            )
+            event_id = uid.strip() if uid else _stable_id(self.authority, title, scheduled_at)
             event_url = _safe_url(_property_value(raw, "URL"), self.source_url)
             tentative = (
                 all_day
@@ -155,11 +146,11 @@ def bea_calendar_adapter(client: HttpClient) -> IcsCalendarAdapter:
     )
 
 
-Property = Tuple[Mapping[str, str], str]
+Property = tuple[Mapping[str, str], str]
 
 
-def _unfold(text: str) -> List[str]:
-    lines: List[str] = []
+def _unfold(text: str) -> list[str]:
+    lines: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         if line.startswith((" ", "\t")) and lines:
             lines[-1] += line[1:]
@@ -168,9 +159,9 @@ def _unfold(text: str) -> List[str]:
     return lines
 
 
-def _collect_events(lines: Iterable[str]) -> List[Dict[str, List[Property]]]:
-    events: List[Dict[str, List[Property]]] = []
-    current: Optional[Dict[str, List[Property]]] = None
+def _collect_events(lines: Iterable[str]) -> list[dict[str, list[Property]]]:
+    events: list[dict[str, list[Property]]] = []
+    current: dict[str, list[Property]] | None = None
     for line in lines:
         if line.upper() == "BEGIN:VEVENT":
             current = {}
@@ -185,7 +176,7 @@ def _collect_events(lines: Iterable[str]) -> List[Dict[str, List[Property]]]:
         head, value = line.split(":", 1)
         pieces = head.split(";")
         name = pieces[0].upper()
-        params: Dict[str, str] = {}
+        params: dict[str, str] = {}
         for piece in pieces[1:]:
             if "=" in piece:
                 key, parameter_value = piece.split("=", 1)
@@ -194,14 +185,12 @@ def _collect_events(lines: Iterable[str]) -> List[Dict[str, List[Property]]]:
     return events
 
 
-def _first_property(
-    event: Mapping[str, List[Property]], name: str
-) -> Optional[Property]:
+def _first_property(event: Mapping[str, list[Property]], name: str) -> Property | None:
     properties = event.get(name)
     return properties[0] if properties else None
 
 
-def _property_value(event: Mapping[str, List[Property]], name: str) -> Optional[str]:
+def _property_value(event: Mapping[str, list[Property]], name: str) -> str | None:
     prop = _first_property(event, name)
     return prop[1] if prop is not None else None
 
@@ -210,11 +199,9 @@ def _parse_ical_datetime(
     value: str,
     params: Mapping[str, str],
     default_timezone: str,
-) -> Tuple[datetime, bool]:
+) -> tuple[datetime, bool]:
     text = value.strip()
-    is_date = params.get("VALUE", "").upper() == "DATE" or (
-        len(text) == 8 and "T" not in text
-    )
+    is_date = params.get("VALUE", "").upper() == "DATE" or (len(text) == 8 and "T" not in text)
     if is_date:
         parsed_date = datetime.strptime(text, "%Y%m%d").date()
         local = datetime.combine(parsed_date, time.min, ZoneInfo(default_timezone))
@@ -254,7 +241,7 @@ def _unescape(value: str) -> str:
     )
 
 
-def _safe_url(value: Optional[str], base_url: str) -> Optional[str]:
+def _safe_url(value: str | None, base_url: str) -> str | None:
     if not value:
         return None
     absolute = urljoin(base_url, _unescape(value))

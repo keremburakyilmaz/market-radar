@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+import sys
+import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-import sys
-import unittest
 from urllib.parse import parse_qs, urlparse
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from market_radar.sources.base import (  # noqa: E402
+    MAX_RESPONSE_BYTES,
     Freshness,
     HttpResponse,
-    MAX_RESPONSE_BYTES,
     ReleaseKind,
     SourceStatus,
     error_result,
@@ -33,7 +32,6 @@ from market_radar.sources.feeds import (  # noqa: E402
 from market_radar.sources.fred import FredBroadUsdAdapter  # noqa: E402
 from market_radar.sources.gdelt import GdeltDocAdapter  # noqa: E402
 from market_radar.sources.treasury import TreasuryYieldAdapter  # noqa: E402
-
 
 UTC = timezone.utc
 RETRIEVED = datetime(2026, 8, 23, 15, 0, tzinfo=UTC)
@@ -57,9 +55,7 @@ class FixtureClient:
 
 class IndicatorSourceTests(unittest.TestCase):
     def test_treasury_yields_and_curve_keep_observation_dates(self):
-        result = TreasuryYieldAdapter(FixtureClient("treasury_yield.xml")).fetch(
-            RETRIEVED
-        )
+        result = TreasuryYieldAdapter(FixtureClient("treasury_yield.xml")).fetch(RETRIEVED)
 
         self.assert_result_ok(result)
         self.assertEqual(len(result.items), 6)
@@ -75,9 +71,7 @@ class IndicatorSourceTests(unittest.TestCase):
 
     def test_treasury_marks_old_observations_stale(self):
         retrieved = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
-        result = TreasuryYieldAdapter(FixtureClient("treasury_yield.xml")).fetch(
-            retrieved
-        )
+        result = TreasuryYieldAdapter(FixtureClient("treasury_yield.xml")).fetch(retrieved)
 
         self.assertEqual(result.status, SourceStatus.DEGRADED)
         self.assertEqual(result.freshness, Freshness.STALE)
@@ -86,9 +80,7 @@ class IndicatorSourceTests(unittest.TestCase):
 
     def test_treasury_reads_current_grouped_xml_shape(self):
         retrieved = datetime(2026, 8, 4, 21, 0, tzinfo=UTC)
-        result = TreasuryYieldAdapter(
-            FixtureClient("treasury_yield_current.xml")
-        ).fetch(retrieved)
+        result = TreasuryYieldAdapter(FixtureClient("treasury_yield_current.xml")).fetch(retrieved)
 
         self.assertEqual(result.status, SourceStatus.OK)
         self.assertEqual(len(result.items), 6)
@@ -127,9 +119,7 @@ class IndicatorSourceTests(unittest.TestCase):
         result = FredBroadUsdAdapter(client, "fixture-secret").fetch(RETRIEVED)
         self.assert_result_ok(result)
         self.assertEqual(len(result.items), 3)
-        self.assertTrue(
-            all(item.indicator_id == "fed-broad-usd" for item in result.items)
-        )
+        self.assertTrue(all(item.indicator_id == "fed-broad-usd" for item in result.items))
         self.assertEqual(result.items[-1].value, Decimal("120.9987"))
         self.assertEqual(result.items[-1].observed_at.date().isoformat(), "2026-08-21")
         request_query = parse_qs(urlparse(client.calls[0][0]).query)
@@ -164,8 +154,7 @@ class ReleaseSourceTests(unittest.TestCase):
         self.assertEqual(release.category, "Monetary policy")
         self.assertEqual(
             release.url,
-            "https://www.ecb.europa.eu/press/pr/date/2026/html/"
-            "ecb.mp260821~example.en.html",
+            "https://www.ecb.europa.eu/press/pr/date/2026/html/ecb.mp260821~example.en.html",
         )
         self.assertEqual(release.published_at, datetime(2026, 8, 21, 12, 15, tzinfo=UTC))
 
@@ -174,16 +163,12 @@ class ReleaseSourceTests(unittest.TestCase):
         self.assert_result_ok(result)
         release = result.items[0]
         self.assertEqual(release.title, "Press Release on Interest Rates")
-        self.assertEqual(
-            release.publisher, "Central Bank of the Republic of Turkey"
-        )
+        self.assertEqual(release.publisher, "Central Bank of the Republic of Turkey")
         self.assertEqual(release.published_at, datetime(2026, 8, 20, 8, tzinfo=UTC))
         self.assertTrue(release.url.startswith("https://www.tcmb.gov.tr/"))
 
     def test_gdelt_keeps_discovery_metadata_only_and_deduplicates(self):
-        adapter = GdeltDocAdapter(
-            FixtureClient("gdelt_doc.json"), "central bank OR inflation"
-        )
+        adapter = GdeltDocAdapter(FixtureClient("gdelt_doc.json"), "central bank OR inflation")
         result = adapter.fetch(RETRIEVED)
         self.assert_result_ok(result)
         self.assertEqual(len(result.items), 2)
@@ -207,18 +192,14 @@ class ReleaseSourceTests(unittest.TestCase):
         self.assertNotIn("do-not-leak", repr(result))
 
     def test_unknown_error_detail_is_reduced_to_generic_code(self):
-        result = error_result(
-            "https://example.com/source", RETRIEVED, "api_key=do-not-leak"
-        )
+        result = error_result("https://example.com/source", RETRIEVED, "api_key=do-not-leak")
 
         self.assertEqual(result.error_code, "SOURCE_ERROR")
         self.assertNotIn("do-not-leak", repr(result))
 
     def test_oversized_response_is_rejected_before_parsing(self):
         client = FixtureClient()
-        client.get = lambda *args, **kwargs: HttpResponse(
-            200, b"x" * (MAX_RESPONSE_BYTES + 1), {}
-        )
+        client.get = lambda *args, **kwargs: HttpResponse(200, b"x" * (MAX_RESPONSE_BYTES + 1), {})
 
         body, error = retrieve(client, "https://example.com/large")
 
@@ -251,8 +232,7 @@ class CalendarSourceTests(unittest.TestCase):
         gdp, pce = result.items
         self.assertEqual(
             gdp.title,
-            "Gross Domestic Product, 2nd Estimate and Corporate Profits "
-            "(Preliminary)",
+            "Gross Domestic Product, 2nd Estimate and Corporate Profits (Preliminary)",
         )
         self.assertEqual(gdp.scheduled_at, datetime(2026, 8, 27, 12, 30, tzinfo=UTC))
         self.assertEqual(pce.scheduled_at, datetime(2026, 8, 28, 12, 30, tzinfo=UTC))

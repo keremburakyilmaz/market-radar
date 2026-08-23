@@ -22,4 +22,3 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def sha256_hex(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
-

@@ -4,11 +4,11 @@ import hashlib
 import json
 import re
 import unittest
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Iterator, Tuple
+from typing import Any
 from urllib.parse import urlsplit
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
@@ -49,14 +49,14 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def _reject_non_finite(value: str) -> None:
-    raise ValueError("non-finite JSON number is forbidden: {0}".format(value))
+    raise ValueError(f"non-finite JSON number is forbidden: {value}")
 
 
-def load_json(path: Path) -> Dict[str, Any]:
+def load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle, parse_constant=_reject_non_finite)
     if not isinstance(value, dict):
-        raise AssertionError("expected a JSON object in {0}".format(path))
+        raise AssertionError(f"expected a JSON object in {path}")
     return value
 
 
@@ -73,23 +73,23 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def parse_utc(value: str) -> datetime:
     if not UTC_TIMESTAMP_RE.fullmatch(value):
-        raise AssertionError("timestamp is not canonical UTC: {0}".format(value))
+        raise AssertionError(f"timestamp is not canonical UTC: {value}")
     return datetime.fromisoformat(value[:-1] + "+00:00")
 
 
-def walk(value: Any, path: str = "$") -> Iterator[Tuple[str, Any]]:
+def walk(value: Any, path: str = "$") -> Iterator[tuple[str, Any]]:
     yield path, value
     if isinstance(value, dict):
         for key, child in value.items():
-            yield from walk(child, "{0}.{1}".format(path, key))
+            yield from walk(child, f"{path}.{key}")
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            yield from walk(child, "{0}[{1}]".format(path, index))
+            yield from walk(child, f"{path}[{index}]")
 
 
 def assert_exact_keys(
     case: unittest.TestCase,
-    value: Dict[str, Any],
+    value: dict[str, Any],
     required: Iterable[str],
     optional: Iterable[str] = (),
 ) -> None:
@@ -109,8 +109,8 @@ def assert_https_url(case: unittest.TestCase, value: str) -> None:
 
 def schema_subset_errors(
     instance: Any,
-    schema: Dict[str, Any],
-    root_schema: Dict[str, Any],
+    schema: dict[str, Any],
+    root_schema: dict[str, Any],
     path: str = "$",
 ) -> list:
     """Validate the JSON Schema keywords used by these contracts with stdlib only."""
@@ -127,13 +127,13 @@ def schema_subset_errors(
             schema_subset_errors(instance, branch, root_schema, path) for branch in branches
         ]
         if sum(not branch for branch in branch_errors) != 1:
-            errors.append("{0}: expected exactly one oneOf branch".format(path))
+            errors.append(f"{path}: expected exactly one oneOf branch")
         return errors
 
     if "const" in schema and instance != schema["const"]:
-        errors.append("{0}: expected const {1!r}".format(path, schema["const"]))
+        errors.append("{}: expected const {!r}".format(path, schema["const"]))
     if "enum" in schema and instance not in schema["enum"]:
-        errors.append("{0}: value is not in enum".format(path))
+        errors.append(f"{path}: value is not in enum")
 
     expected_type = schema.get("type")
     type_matches = {
@@ -145,35 +145,35 @@ def schema_subset_errors(
         "null": instance is None,
     }
     if expected_type is not None and not type_matches[expected_type]:
-        errors.append("{0}: expected type {1}".format(path, expected_type))
+        errors.append(f"{path}: expected type {expected_type}")
         return errors
 
     if isinstance(instance, dict) and expected_type == "object":
         properties = schema.get("properties", {})
         for key in schema.get("required", ()):
             if key not in instance:
-                errors.append("{0}.{1}: required property is missing".format(path, key))
+                errors.append(f"{path}.{key}: required property is missing")
         if schema.get("additionalProperties") is False:
             for key in set(instance) - set(properties):
-                errors.append("{0}.{1}: additional property is forbidden".format(path, key))
+                errors.append(f"{path}.{key}: additional property is forbidden")
         for key, value in instance.items():
             if key in properties:
                 errors.extend(
-                    schema_subset_errors(value, properties[key], root_schema, "{0}.{1}".format(path, key))
+                    schema_subset_errors(value, properties[key], root_schema, f"{path}.{key}")
                 )
 
     if isinstance(instance, list) and expected_type == "array":
         if len(instance) < schema.get("minItems", 0):
-            errors.append("{0}: array is shorter than minItems".format(path))
+            errors.append(f"{path}: array is shorter than minItems")
         if len(instance) > schema.get("maxItems", float("inf")):
-            errors.append("{0}: array is longer than maxItems".format(path))
+            errors.append(f"{path}: array is longer than maxItems")
         if schema.get("uniqueItems"):
             encoded = [
                 json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 for item in instance
             ]
             if len(encoded) != len(set(encoded)):
-                errors.append("{0}: array items are not unique".format(path))
+                errors.append(f"{path}: array items are not unique")
         item_schema = schema.get("items")
         if item_schema is not None:
             for index, value in enumerate(instance):
@@ -182,35 +182,35 @@ def schema_subset_errors(
                         value,
                         item_schema,
                         root_schema,
-                        "{0}[{1}]".format(path, index),
+                        f"{path}[{index}]",
                     )
                 )
 
     if isinstance(instance, str) and expected_type == "string":
         if len(instance) < schema.get("minLength", 0):
-            errors.append("{0}: string is shorter than minLength".format(path))
+            errors.append(f"{path}: string is shorter than minLength")
         if len(instance) > schema.get("maxLength", float("inf")):
-            errors.append("{0}: string is longer than maxLength".format(path))
+            errors.append(f"{path}: string is longer than maxLength")
         pattern = schema.get("pattern")
         if pattern is not None and re.search(pattern, instance) is None:
-            errors.append("{0}: string does not match pattern".format(path))
+            errors.append(f"{path}: string does not match pattern")
         if schema.get("format") == "date-time":
             try:
                 parse_utc(instance)
             except (AssertionError, ValueError):
-                errors.append("{0}: invalid date-time".format(path))
+                errors.append(f"{path}: invalid date-time")
         if schema.get("format") == "uri":
             parsed = urlsplit(instance)
             if not parsed.scheme or not parsed.netloc:
-                errors.append("{0}: invalid URI".format(path))
+                errors.append(f"{path}: invalid URI")
 
     if expected_type in {"integer", "number"} and type_matches[expected_type]:
         if "minimum" in schema and instance < schema["minimum"]:
-            errors.append("{0}: number is below minimum".format(path))
+            errors.append(f"{path}: number is below minimum")
         if "maximum" in schema and instance > schema["maximum"]:
-            errors.append("{0}: number is above maximum".format(path))
+            errors.append(f"{path}: number is above maximum")
         if "exclusiveMinimum" in schema and instance <= schema["exclusiveMinimum"]:
-            errors.append("{0}: number is not above exclusiveMinimum".format(path))
+            errors.append(f"{path}: number is not above exclusiveMinimum")
 
     return errors
 
@@ -232,7 +232,7 @@ class SchemaShapeTests(unittest.TestCase):
                     self.assertIs(
                         node.get("additionalProperties"),
                         False,
-                        "object is not closed at {0}".format(path),
+                        f"object is not closed at {path}",
                     )
                     self.assertIn("properties", node, path)
                     self.assertTrue(
@@ -259,9 +259,7 @@ class SchemaShapeTests(unittest.TestCase):
             set(self.manifest_schema["required"]),
             {"manifestVersion", "publishedAt", "snapshot"},
         )
-        self.assertEqual(
-            self.manifest_schema["properties"]["manifestVersion"]["const"], 1
-        )
+        self.assertEqual(self.manifest_schema["properties"]["manifestVersion"]["const"], 1)
         pointer = self.manifest_schema["properties"]["snapshot"]
         self.assertEqual(pointer["properties"]["schemaVersion"]["const"], 1)
         self.assertEqual(pointer["properties"]["path"]["minLength"], 114)
@@ -274,15 +272,14 @@ class SchemaShapeTests(unittest.TestCase):
 
     def test_snapshot_schema_exposes_only_the_v1_public_sections(self) -> None:
         self.assertEqual(set(self.snapshot_schema["required"]), SNAPSHOT_TOP_LEVEL_KEYS)
-        self.assertEqual(
-            self.snapshot_schema["properties"]["schemaVersion"]["const"], 1
-        )
+        self.assertEqual(self.snapshot_schema["properties"]["schemaVersion"]["const"], 1)
         definitions = self.snapshot_schema["$defs"]
         self.assertIn("macroConditions", definitions)
         self.assertNotIn("marketRegime", definitions)
         self.assertEqual(
-            definitions["macroConditions"]["properties"]["scoreScale"]
-            ["properties"]["higherMeans"]["const"],
+            definitions["macroConditions"]["properties"]["scoreScale"]["properties"]["higherMeans"][
+                "const"
+            ],
             "More restrictive macro-financial conditions",
         )
         self.assertEqual(
@@ -309,7 +306,7 @@ class SchemaShapeTests(unittest.TestCase):
                 self.assertIn("maxItems", node, path)
             if node.get("type") == "string" and "enum" not in node:
                 has_bound = "maxLength" in node or "pattern" in node
-                self.assertTrue(has_bound, "unbounded string at {0}".format(path))
+                self.assertTrue(has_bound, f"unbounded string at {path}")
 
 
 class CanonicalExampleTests(unittest.TestCase):
@@ -322,12 +319,8 @@ class CanonicalExampleTests(unittest.TestCase):
     def test_examples_satisfy_their_schemas_without_external_dependencies(self) -> None:
         manifest_schema = load_json(SCHEMA_DIR / "manifest.v1.schema.json")
         snapshot_schema = load_json(SCHEMA_DIR / "snapshot.v1.schema.json")
-        self.assertEqual(
-            schema_subset_errors(self.manifest, manifest_schema, manifest_schema), []
-        )
-        self.assertEqual(
-            schema_subset_errors(self.snapshot, snapshot_schema, snapshot_schema), []
-        )
+        self.assertEqual(schema_subset_errors(self.manifest, manifest_schema, manifest_schema), [])
+        self.assertEqual(schema_subset_errors(self.snapshot, snapshot_schema, snapshot_schema), [])
 
     def test_manifest_is_relative_content_addressed_and_self_consistent(self) -> None:
         assert_exact_keys(
@@ -405,9 +398,7 @@ class CanonicalExampleTests(unittest.TestCase):
             },
         )
         accounted_for = (
-            coverage["successfulSources"]
-            + coverage["staleSources"]
-            + coverage["failedSources"]
+            coverage["successfulSources"] + coverage["staleSources"] + coverage["failedSources"]
         )
         self.assertEqual(coverage["expectedSources"], accounted_for)
         self.assertEqual(coverage["expectedSources"], len(self.snapshot["sources"]))
@@ -476,9 +467,7 @@ class CanonicalExampleTests(unittest.TestCase):
             expected_age = int((generated_at - observed_at).total_seconds())
             self.assertEqual(freshness["ageSeconds"], expected_age)
             expected_status = (
-                "fresh"
-                if freshness["ageSeconds"] <= freshness["maxAgeSeconds"]
-                else "stale"
+                "fresh" if freshness["ageSeconds"] <= freshness["maxAgeSeconds"] else "stale"
             )
             self.assertEqual(freshness["status"], expected_status)
 
@@ -493,7 +482,9 @@ class CanonicalExampleTests(unittest.TestCase):
         story_ids = {story["id"] for story in self.snapshot["stories"]}
 
         for development in self.snapshot["priorityDevelopments"]:
-            self.assertLessEqual(parse_utc(development["firstSeenAt"]), parse_utc(development["updatedAt"]))
+            self.assertLessEqual(
+                parse_utc(development["firstSeenAt"]), parse_utc(development["updatedAt"])
+            )
             self.assertLessEqual(parse_utc(development["updatedAt"]), generated_at)
             self.assertTrue(development["marketTags"])
             for provenance in development["provenance"]:

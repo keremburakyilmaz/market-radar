@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable
 
 from market_radar.canonical import canonical_json_bytes as _canonical_json_bytes
 from market_radar.canonical import sha256_hex
 
 from .store import ObjectStore, ObjectStoreConflictError, StoredObject
-
 
 SNAPSHOT_CACHE_CONTROL = "public,max-age=31536000,immutable"
 POINTER_CACHE_CONTROL = "no-store"
@@ -41,8 +41,8 @@ class PublishResult:
     snapshot_sha256: str
     snapshot_bytes: int
     latest_key: str
-    snapshot_etag: Optional[str]
-    latest_etag: Optional[str]
+    snapshot_etag: str | None
+    latest_etag: str | None
     snapshot_created: bool
     latest_updated: bool
     dry_run: bool
@@ -54,9 +54,7 @@ def canonical_json_bytes(value: Any) -> bytes:
     try:
         return _canonical_json_bytes(value)
     except (TypeError, ValueError) as error:
-        raise SnapshotSerializationError(
-            "snapshot is not strict JSON: {}".format(error)
-        ) from error
+        raise SnapshotSerializationError(f"snapshot is not strict JSON: {error}") from error
 
 
 class Publisher:
@@ -67,15 +65,13 @@ class Publisher:
         store: ObjectStore,
         *,
         latest_key: str = LATEST_KEY,
-        clock: Optional[Callable[[], datetime]] = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.store = store
         self.latest_key = latest_key
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def publish(
-        self, snapshot: Mapping[str, Any], *, dry_run: bool = False
-    ) -> PublishResult:
+    def publish(self, snapshot: Mapping[str, Any], *, dry_run: bool = False) -> PublishResult:
         snapshot_body = canonical_json_bytes(snapshot)
         snapshot_sha256 = self._sha256(snapshot_body)
         generated_at, generated_at_text = self._generated_at(snapshot)
@@ -142,9 +138,7 @@ class Publisher:
 
         stored = self.store.get(key)
         if stored is None:
-            raise PublishVerificationError(
-                "snapshot is missing after upload: {}".format(key)
-            )
+            raise PublishVerificationError(f"snapshot is missing after upload: {key}")
         self._verify_body(key, stored.body, expected_body, expected_sha256)
         self._verify_metadata(
             key,
@@ -156,17 +150,17 @@ class Publisher:
 
     def _update_latest(self, expected_body: bytes) -> tuple[StoredObject, bool]:
         previous = self.store.get(self.latest_key)
-        if previous is not None:
-            if previous.body == expected_body or self._same_snapshot_pointer(
-                previous.body, expected_body
-            ):
-                self._verify_metadata(
-                    self.latest_key,
-                    previous,
-                    content_type=JSON_CONTENT_TYPE,
-                    cache_control=POINTER_CACHE_CONTROL,
-                )
-                return previous, False
+        if previous is not None and (
+            previous.body == expected_body
+            or self._same_snapshot_pointer(previous.body, expected_body)
+        ):
+            self._verify_metadata(
+                self.latest_key,
+                previous,
+                content_type=JSON_CONTENT_TYPE,
+                cache_control=POINTER_CACHE_CONTROL,
+            )
+            return previous, False
 
         try:
             self.store.put(
@@ -178,15 +172,11 @@ class Publisher:
                 if_none_match=previous is None,
             )
         except ObjectStoreConflictError as error:
-            raise PublishConflictError(
-                "latest pointer changed during publication"
-            ) from error
+            raise PublishConflictError("latest pointer changed during publication") from error
 
         stored = self.store.get(self.latest_key)
         if stored is None:
-            raise PublishVerificationError(
-                "latest pointer failed readback verification"
-            )
+            raise PublishVerificationError("latest pointer failed readback verification")
         self._verify_body(
             self.latest_key,
             stored.body,
@@ -210,9 +200,7 @@ class Publisher:
     ) -> None:
         actual_sha256 = Publisher._sha256(actual_body)
         if actual_sha256 != expected_sha256 or actual_body != expected_body:
-            raise PublishVerificationError(
-                "object readback hash mismatch for {}".format(key)
-            )
+            raise PublishVerificationError(f"object readback hash mismatch for {key}")
 
     @staticmethod
     def _verify_metadata(
@@ -223,13 +211,9 @@ class Publisher:
         cache_control: str,
     ) -> None:
         if stored.content_type != content_type:
-            raise PublishVerificationError(
-                "object Content-Type mismatch for {}".format(key)
-            )
+            raise PublishVerificationError(f"object Content-Type mismatch for {key}")
         if stored.cache_control != cache_control:
-            raise PublishVerificationError(
-                "object Cache-Control mismatch for {}".format(key)
-            )
+            raise PublishVerificationError(f"object Cache-Control mismatch for {key}")
 
     @staticmethod
     def _generated_at(snapshot: Mapping[str, Any]) -> tuple[datetime, str]:
@@ -247,9 +231,7 @@ class Publisher:
                 "snapshot.generatedAt is not valid ISO-8601"
             ) from error
         if parsed.tzinfo is None:
-            raise SnapshotSerializationError(
-                "snapshot.generatedAt must include a timezone"
-            )
+            raise SnapshotSerializationError("snapshot.generatedAt must include a timezone")
 
         generated_at = parsed.astimezone(timezone.utc)
         generated_at_text = generated_at.isoformat().replace("+00:00", "Z")
@@ -321,9 +303,7 @@ class Publisher:
     def _snapshot_key(generated_at: datetime, digest: str) -> str:
         directory = generated_at.strftime("%Y/%m/%d")
         timestamp = generated_at.strftime("%Y-%m-%dT%H-%M-%SZ")
-        return "v1/snapshots/{}/{}-{}.json".format(
-            directory, timestamp, digest
-        )
+        return f"v1/snapshots/{directory}/{timestamp}-{digest}.json"
 
     @staticmethod
     def _sha256(body: bytes) -> str:

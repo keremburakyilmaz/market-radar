@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any
 
 from market_radar.schema_validation import validate_schema
 from market_radar.timeutil import parse_utc
-
 
 SNAPSHOT_PATH_PATTERN = re.compile(
     r"^v1/snapshots/"
@@ -29,7 +29,7 @@ class ValidationIssue:
 class ContractValidationError(ValueError):
     def __init__(self, issues: Sequence[ValidationIssue]):
         self.issues = tuple(issues)
-        detail = "; ".join("{}: {}".format(issue.path, issue.message) for issue in issues)
+        detail = "; ".join(f"{issue.path}: {issue.message}" for issue in issues)
         super().__init__(detail)
 
 
@@ -44,7 +44,7 @@ def _schema_gate(value: Any, schema_name: str) -> None:
     raise ContractValidationError(issues)
 
 
-def _walk_json(value: Any, path: str, issues: List[ValidationIssue]) -> None:
+def _walk_json(value: Any, path: str, issues: list[ValidationIssue]) -> None:
     if isinstance(value, float) and not math.isfinite(value):
         issues.append(ValidationIssue(path, "must not contain NaN or infinity"))
     elif isinstance(value, str):
@@ -53,13 +53,13 @@ def _walk_json(value: Any, path: str, issues: List[ValidationIssue]) -> None:
             issues.append(ValidationIssue(path, "contains unsafe executable content"))
     elif isinstance(value, Mapping):
         for key, child in value.items():
-            _walk_json(child, "{}.{}".format(path, key), issues)
+            _walk_json(child, f"{path}.{key}", issues)
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _walk_json(child, "{}[{}]".format(path, index), issues)
+            _walk_json(child, f"{path}[{index}]", issues)
 
 
-def _timestamp(value: str, path: str, issues: List[ValidationIssue]) -> Optional[datetime]:
+def _timestamp(value: str, path: str, issues: list[ValidationIssue]) -> datetime | None:
     try:
         return parse_utc(value)
     except (TypeError, ValueError):
@@ -70,14 +70,14 @@ def _timestamp(value: str, path: str, issues: List[ValidationIssue]) -> Optional
 def validate_snapshot(
     snapshot: Any,
     *,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
     enforce_publish_time: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Validate the closed schema plus cross-field and scoring invariants."""
 
     _schema_gate(snapshot, "snapshot.v1.schema.json")
     root = dict(snapshot)
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
 
     generated_at = _timestamp(root["generatedAt"], "$.generatedAt", issues)
     valid_until = _timestamp(root["validUntil"], "$.validUntil", issues)
@@ -156,21 +156,19 @@ def validate_snapshot(
         if driver["indicatorId"] not in indicator_id_set:
             issues.append(
                 ValidationIssue(
-                    "$.macroConditions.drivers[{}].indicatorId".format(index),
+                    f"$.macroConditions.drivers[{index}].indicatorId",
                     "must reference a published indicator",
                 )
             )
     for index, indicator in enumerate(root["indicators"]):
-        observed = _timestamp(
-            indicator["observedAt"], "$.indicators[{}].observedAt".format(index), issues
-        )
+        observed = _timestamp(indicator["observedAt"], f"$.indicators[{index}].observedAt", issues)
         retrieved = _timestamp(
-            indicator["retrievedAt"], "$.indicators[{}].retrievedAt".format(index), issues
+            indicator["retrievedAt"], f"$.indicators[{index}].retrievedAt", issues
         )
         if observed and retrieved and observed > retrieved + timedelta(minutes=5):
             issues.append(
                 ValidationIssue(
-                    "$.indicators[{}].observedAt".format(index),
+                    f"$.indicators[{index}].observedAt",
                     "must not be after retrieval",
                 )
             )
@@ -191,10 +189,11 @@ def validate_snapshot(
         raise ContractValidationError(issues)
     return root
 
-def validate_manifest(manifest: Any) -> Dict[str, Any]:
+
+def validate_manifest(manifest: Any) -> dict[str, Any]:
     _schema_gate(manifest, "manifest.v1.schema.json")
     root = dict(manifest)
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
     published_at = _timestamp(root["publishedAt"], "$.publishedAt", issues)
     pointer = root["snapshot"]
     generated_at = _timestamp(pointer["generatedAt"], "$.snapshot.generatedAt", issues)

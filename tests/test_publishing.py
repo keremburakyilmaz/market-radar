@@ -5,8 +5,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Optional
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -42,7 +40,7 @@ class DelegatingStore:
     def __init__(self, inner: LocalObjectStore) -> None:
         self.inner = inner
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         return self.inner.get(key)
 
     def put(self, key: str, body: bytes, **kwargs) -> StoredObject:
@@ -60,13 +58,9 @@ class CorruptingSnapshotStore(DelegatingStore):
             self.corrupt_snapshot_reads = True
         return stored
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         stored = super().get(key)
-        if (
-            stored is not None
-            and self.corrupt_snapshot_reads
-            and key.startswith("v1/snapshots/")
-        ):
+        if stored is not None and self.corrupt_snapshot_reads and key.startswith("v1/snapshots/"):
             return StoredObject(
                 key=stored.key,
                 body=stored.body + b"corrupt",
@@ -82,7 +76,7 @@ class ConflictingLatestStore(DelegatingStore):
         super().__init__(inner)
         self.conflict_on_next_latest_put = False
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         stored = super().get(key)
         if key == LATEST_KEY and stored is not None:
             self.conflict_on_next_latest_put = True

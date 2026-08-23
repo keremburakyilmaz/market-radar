@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 from market_radar.domain import CollectedIndicator
 
@@ -18,14 +19,15 @@ class MacroDriver:
     weight: float
     explanation: str
 
+
 @dataclass(frozen=True)
 class MacroConditions:
     score: float
     label: str
     summary: str
-    drivers: Tuple[MacroDriver, ...]
+    drivers: tuple[MacroDriver, ...]
 
-    def public_dict(self) -> dict:
+    def public_dict(self) -> dict[str, Any]:
         weight_total = sum(driver.weight for driver in self.drivers)
         driver_payload = []
         contribution_total = 0.0
@@ -89,7 +91,7 @@ def _clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
     return max(minimum, min(maximum, value))
 
 
-def _latest(values: Sequence[CollectedIndicator]) -> Optional[CollectedIndicator]:
+def _latest(values: Sequence[CollectedIndicator]) -> CollectedIndicator | None:
     if not values:
         return None
     return max(values, key=lambda item: item.observed_at)
@@ -97,7 +99,7 @@ def _latest(values: Sequence[CollectedIndicator]) -> Optional[CollectedIndicator
 
 def _long_rate_driver(
     indicators: Mapping[str, CollectedIndicator],
-) -> Optional[MacroDriver]:
+) -> MacroDriver | None:
     observation = indicators.get("us-treasury-10y")
     if observation is None:
         return None
@@ -118,7 +120,7 @@ def _long_rate_driver(
 
 def _curve_driver(
     indicators: Mapping[str, CollectedIndicator],
-) -> Optional[MacroDriver]:
+) -> MacroDriver | None:
     curve = indicators.get("us-curve-2s10s")
     if curve is None:
         two_year = indicators.get("us-treasury-2y")
@@ -144,7 +146,7 @@ def _curve_driver(
 
 def _broad_usd_driver(
     histories: Mapping[str, Sequence[CollectedIndicator]],
-) -> Optional[MacroDriver]:
+) -> MacroDriver | None:
     values = sorted(histories.get("fed-broad-usd", ()), key=lambda item: item.observed_at)
     if len(values) < 2:
         return None
@@ -163,8 +165,9 @@ def _broad_usd_driver(
         score=score,
         weight=0.25,
         explanation=(
-            "The Federal Reserve broad dollar index is {} over the comparison window ({:+.2f}%)."
-        ).format(direction, change_percent),
+            f"The Federal Reserve broad dollar index is {direction} over the "
+            f"comparison window ({change_percent:+.2f}%)."
+        ),
     )
 
 
@@ -202,19 +205,20 @@ def score_macro_conditions(
     strongest = max(drivers, key=lambda driver: driver.score)
     softest = min(drivers, key=lambda driver: driver.score)
     if strongest.driver_id == softest.driver_id:
-        summary = "Available official inputs point to {}.".format(label)
+        summary = f"Available official inputs point to {label}."
     else:
         summary = (
-            "{} is the strongest pressure input; {} provides the largest offset."
-        ).format(strongest.label, softest.label)
+            f"{strongest.label} is the strongest pressure input; "
+            f"{softest.label} provides the largest offset."
+        )
 
     return MacroConditions(score=score, label=label, summary=summary, drivers=drivers)
 
 
 def latest_indicators(
     indicators: Sequence[CollectedIndicator],
-) -> Dict[str, CollectedIndicator]:
-    grouped: Dict[str, list] = {}
+) -> dict[str, CollectedIndicator]:
+    grouped: dict[str, list[CollectedIndicator]] = {}
     for indicator in indicators:
         grouped.setdefault(indicator.indicator_id, []).append(indicator)
     return {
@@ -225,7 +229,7 @@ def latest_indicators(
     }
 
 
-def _driver_tags(indicator_id: str) -> list:
+def _driver_tags(indicator_id: str) -> list[str]:
     if indicator_id == "fed-broad-usd":
         return ["global", "united-states", "fx"]
     return ["global", "united-states", "rates"]

@@ -16,4 +16,3 @@ class CanonicalJsonTests(unittest.TestCase):
     def test_non_finite_numbers_fail_closed(self):
         with self.assertRaises(ValueError):
             canonical_json_bytes({"value": math.nan})
-

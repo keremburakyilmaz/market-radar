@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Dict, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from .base import (
+    UTC,
     HttpClient,
     Release,
     ReleaseKind,
     SourceResult,
-    UTC,
     error_result,
     normalize_retrieved_at,
     retrieve,
     success_result,
 )
-
 
 GDELT_DOC_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 _TRACKING_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
@@ -56,9 +54,9 @@ class GdeltDocAdapter:
                 "timespan": self.timespan,
             }
         )
-        return "{}?{}".format(GDELT_DOC_URL, query)
+        return f"{GDELT_DOC_URL}?{query}"
 
-    def fetch(self, retrieved_at: Optional[datetime] = None) -> SourceResult[Release]:
+    def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[Release]:
         retrieved = normalize_retrieved_at(retrieved_at)
         body, request_error = retrieve(
             self.client,
@@ -78,7 +76,7 @@ class GdeltDocAdapter:
         if not isinstance(articles, list):
             raise TypeError("articles must be a list")
 
-        releases: Dict[str, Release] = {}
+        releases: dict[str, Release] = {}
         partial = False
         for article in articles:
             if not isinstance(article, dict):
@@ -144,7 +142,7 @@ class GdeltDocAdapter:
         )
 
 
-def _canonicalize_url(value: str) -> Optional[str]:
+def _canonicalize_url(value: str) -> str | None:
     parsed = urlparse(value.strip())
     if (
         parsed.scheme != "https"
@@ -180,7 +178,7 @@ def _parse_seen_date(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _optional_string(value: object) -> Optional[str]:
+def _optional_string(value: object) -> str | None:
     if value is None:
         return None
     normalized = " ".join(str(value).split())

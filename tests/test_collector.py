@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from market_radar.collector import CollectionJob, collect_sources
@@ -13,7 +13,6 @@ from market_radar.sources import (
     SourceResult,
     SourceStatus,
 )
-
 
 NOW = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
 SOURCE = SourceDescriptor("official", "Official", "https://example.gov/feed", "public")
@@ -46,13 +45,7 @@ class CollectorTests(unittest.TestCase):
             "indicators",
             "indicator",
             FakeAdapter(
-                success(
-                    [
-                        IndicatorObservation(
-                            "us-treasury-10y", Decimal("4.31"), "percent", NOW
-                        )
-                    ]
-                )
+                success([IndicatorObservation("us-treasury-10y", Decimal("4.31"), "percent", NOW)])
             ),
             SOURCE,
         )
@@ -116,4 +109,3 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(result.releases, ())
         self.assertEqual(result.source_health[0].error_code, "ADAPTER_ERROR")
         self.assertNotIn("secret", str(result.source_health[0]))
-

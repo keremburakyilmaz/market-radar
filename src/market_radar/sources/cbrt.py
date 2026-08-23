@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Mapping, Optional
 
 from .base import (
+    UTC,
     HttpClient,
     IndicatorObservation,
     SourceResult,
-    UTC,
     error_result,
     normalize_retrieved_at,
     retrieve,
     success_result,
 )
-
 
 CBRT_TODAY_URL = "https://www.tcmb.gov.tr/kurlar/today.xml"
 
@@ -35,9 +34,7 @@ class CbrtUsdTryAdapter:
         self.source_url = source_url
         self.max_age = max_age
 
-    def fetch(
-        self, retrieved_at: Optional[datetime] = None
-    ) -> SourceResult[IndicatorObservation]:
+    def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[IndicatorObservation]:
         retrieved = normalize_retrieved_at(retrieved_at)
         body, request_error = retrieve(
             self.client,
@@ -51,9 +48,7 @@ class CbrtUsdTryAdapter:
         except Exception:
             return error_result(self.source_url, retrieved, "PARSE_ERROR")
 
-    def parse(
-        self, body: bytes, retrieved_at: datetime
-    ) -> SourceResult[IndicatorObservation]:
+    def parse(self, body: bytes, retrieved_at: datetime) -> SourceResult[IndicatorObservation]:
         root = ET.fromstring(body)
         observed_at = _parse_rate_date(root.attrib)
 
@@ -101,7 +96,7 @@ def _parse_rate_date(attributes: Mapping[str, str]) -> datetime:
     raise ValueError("unsupported rate date")
 
 
-def _child_text(parent: ET.Element, name: str) -> Optional[str]:
+def _child_text(parent: ET.Element, name: str) -> str | None:
     for child in parent:
         if child.tag.rsplit("}", 1)[-1] == name and child.text:
             value = child.text.strip()

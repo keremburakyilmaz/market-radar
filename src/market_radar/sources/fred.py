@@ -5,20 +5,18 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Optional
 from urllib.parse import urlencode
 
 from .base import (
+    UTC,
     HttpClient,
     IndicatorObservation,
     SourceResult,
-    UTC,
     error_result,
     normalize_retrieved_at,
     retrieve,
     success_result,
 )
-
 
 FRED_API_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_BROAD_USD_SOURCE_URL = "https://fred.stlouisfed.org/series/DTWEXBGS"
@@ -30,30 +28,26 @@ class FredBroadUsdAdapter:
     def __init__(
         self,
         client: HttpClient,
-        api_key: Optional[str],
+        api_key: str | None,
         max_age: timedelta = timedelta(days=10),
     ) -> None:
         self.client = client
         self.api_key = api_key.strip() if api_key else ""
         self.max_age = max_age
 
-    def fetch(
-        self, retrieved_at: Optional[datetime] = None
-    ) -> SourceResult[IndicatorObservation]:
+    def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[IndicatorObservation]:
         retrieved = normalize_retrieved_at(retrieved_at)
         if not self.api_key:
-            return error_result(
-                FRED_BROAD_USD_SOURCE_URL, retrieved, "AUTH_MISSING"
-            )
+            return error_result(FRED_BROAD_USD_SOURCE_URL, retrieved, "AUTH_MISSING")
 
-        query: Dict[str, str] = {
+        query: dict[str, str] = {
             "series_id": "DTWEXBGS",
             "api_key": self.api_key,
             "file_type": "json",
             "sort_order": "desc",
             "limit": "90",
         }
-        request_url = "{}?{}".format(FRED_API_URL, urlencode(query))
+        request_url = f"{FRED_API_URL}?{urlencode(query)}"
         body, request_error = retrieve(
             self.client,
             request_url,
@@ -70,15 +64,13 @@ class FredBroadUsdAdapter:
         except Exception:
             return error_result(FRED_BROAD_USD_SOURCE_URL, retrieved, "PARSE_ERROR")
 
-    def parse(
-        self, body: bytes, retrieved_at: datetime
-    ) -> SourceResult[IndicatorObservation]:
+    def parse(self, body: bytes, retrieved_at: datetime) -> SourceResult[IndicatorObservation]:
         payload = json.loads(body.decode("utf-8"))
         raw_observations = payload["observations"]
         if not isinstance(raw_observations, list):
             raise TypeError("observations must be a list")
 
-        by_date: Dict[datetime, IndicatorObservation] = {}
+        by_date: dict[datetime, IndicatorObservation] = {}
         partial = False
         for raw in raw_observations:
             if not isinstance(raw, dict):
@@ -92,9 +84,7 @@ class FredBroadUsdAdapter:
                 partial = True
                 continue
             try:
-                observed_at = datetime.strptime(date_text, "%Y-%m-%d").replace(
-                    tzinfo=UTC
-                )
+                observed_at = datetime.strptime(date_text, "%Y-%m-%d").replace(tzinfo=UTC)
                 value = Decimal(value_text)
             except (InvalidOperation, ValueError):
                 partial = True
@@ -108,9 +98,7 @@ class FredBroadUsdAdapter:
 
         ordered = tuple(by_date[key] for key in sorted(by_date))
         if not ordered:
-            return error_result(
-                FRED_BROAD_USD_SOURCE_URL, retrieved_at, "EMPTY_RESULT"
-            )
+            return error_result(FRED_BROAD_USD_SOURCE_URL, retrieved_at, "EMPTY_RESULT")
         return success_result(
             ordered,
             FRED_BROAD_USD_SOURCE_URL,

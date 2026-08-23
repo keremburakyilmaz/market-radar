@@ -6,12 +6,14 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from market_radar.canonical import canonical_json_bytes, sha256_hex
 from market_radar.collector import collect_sources
+from market_radar.domain import CollectionBundle
 from market_radar.pipeline import PipelineRunner
 from market_radar.publishing import (
     Boto3R2ObjectStore,
@@ -56,7 +58,7 @@ def _cmd_canonicalize(args: argparse.Namespace) -> int:
 def _required_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
-        raise ValueError("required environment variable is missing: {}".format(name))
+        raise ValueError(f"required environment variable is missing: {name}")
     return value
 
 
@@ -64,22 +66,24 @@ def _r2_store(prefix: str) -> Boto3R2ObjectStore:
     endpoint = os.environ.get("R2_ENDPOINT")
     if not endpoint:
         account_id = _required_env("CLOUDFLARE_ACCOUNT_ID")
-        endpoint = "https://{}.r2.cloudflarestorage.com".format(account_id)
+        endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
     return Boto3R2ObjectStore(
-        bucket=_required_env("R2_{}_BUCKET".format(prefix)),
+        bucket=_required_env(f"R2_{prefix}_BUCKET"),
         endpoint_url=endpoint,
-        access_key_id=_required_env("R2_{}_ACCESS_KEY_ID".format(prefix)),
-        secret_access_key=_required_env("R2_{}_SECRET_ACCESS_KEY".format(prefix)),
+        access_key_id=_required_env(f"R2_{prefix}_ACCESS_KEY_ID"),
+        secret_access_key=_required_env(f"R2_{prefix}_SECRET_ACCESS_KEY"),
     )
 
 
 def _cmd_refresh(args: argparse.Namespace) -> int:
     if args.publish and args.as_of:
         raise ValueError("--as-of is restricted to dry runs")
-    fixed_time: Optional[datetime] = parse_utc(args.as_of) if args.as_of else None
+    fixed_time: datetime | None = parse_utc(args.as_of) if args.as_of else None
     clock = (lambda: fixed_time) if fixed_time is not None else utc_now
     fred_api_key = os.environ.get("FRED_API_KEY")
-    collector = lambda at: collect_sources(at=at, fred_api_key=fred_api_key)
+
+    def collector(at: datetime) -> CollectionBundle:
+        return collect_sources(at=at, fred_api_key=fred_api_key)
 
     if args.target == "r2":
         if not args.publish:
@@ -105,17 +109,15 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
 
     outcome = runner.run(publish=args.publish, slot=args.slot)
     if outcome.no_op:
-        print("no-op slot={} report={}".format(args.slot, outcome.report_path))
+        print(f"no-op slot={args.slot} report={outcome.report_path}")
     elif outcome.publish_result:
         print(
-            "published key={} sha256={} report={}".format(
-                outcome.publish_result.snapshot_key,
-                outcome.publish_result.snapshot_sha256,
-                outcome.report_path,
-            )
+            f"published key={outcome.publish_result.snapshot_key} "
+            f"sha256={outcome.publish_result.snapshot_sha256} "
+            f"report={outcome.report_path}"
         )
     else:
-        print("dry-run candidate={} report={}".format(outcome.candidate_path, outcome.report_path))
+        print(f"dry-run candidate={outcome.candidate_path} report={outcome.report_path}")
     return 0
 
 
@@ -146,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

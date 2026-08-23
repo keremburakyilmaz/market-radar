@@ -5,24 +5,20 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from .base import (
+    UTC,
     HttpClient,
     IndicatorObservation,
     SourceResult,
-    UTC,
     error_result,
     normalize_retrieved_at,
     retrieve,
     success_result,
 )
 
-
-TREASURY_YIELD_URL = (
-    "https://home.treasury.gov/sites/default/files/interest-rates/yield.xml"
-)
+TREASURY_YIELD_URL = "https://home.treasury.gov/sites/default/files/interest-rates/yield.xml"
 
 
 class TreasuryYieldAdapter:
@@ -38,9 +34,7 @@ class TreasuryYieldAdapter:
         self.source_url = source_url
         self.max_age = max_age
 
-    def fetch(
-        self, retrieved_at: Optional[datetime] = None
-    ) -> SourceResult[IndicatorObservation]:
+    def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[IndicatorObservation]:
         retrieved = normalize_retrieved_at(retrieved_at)
         body, request_error = retrieve(
             self.client,
@@ -54,23 +48,19 @@ class TreasuryYieldAdapter:
         except Exception:
             return error_result(self.source_url, retrieved, "PARSE_ERROR")
 
-    def parse(
-        self, body: bytes, retrieved_at: datetime
-    ) -> SourceResult[IndicatorObservation]:
+    def parse(self, body: bytes, retrieved_at: datetime) -> SourceResult[IndicatorObservation]:
         root = ET.fromstring(body)
-        observations: Dict[Tuple[datetime, str], IndicatorObservation] = {}
+        observations: dict[tuple[datetime, str], IndicatorObservation] = {}
         partial = False
 
         entries = [
-            element
-            for element in root.iter()
-            if _local(element.tag) in {"entry", "G_NEW_DATE"}
+            element for element in root.iter() if _local(element.tag) in {"entry", "G_NEW_DATE"}
         ]
         if not entries and _local(root.tag) in {"entry", "G_NEW_DATE"}:
             entries = [root]
 
         for entry in entries:
-            fields: Dict[str, str] = {}
+            fields: dict[str, str] = {}
             for element in entry.iter():
                 local = _local(element.tag)
                 if local in {"NEW_DATE", "BC_2YEAR", "BC_10YEAR"} and element.text:
@@ -114,8 +104,7 @@ class TreasuryYieldAdapter:
                 observations[(observed_at, item.indicator_id)] = item
 
         ordered = tuple(
-            observations[key]
-            for key in sorted(observations, key=lambda pair: (pair[0], pair[1]))
+            observations[key] for key in sorted(observations, key=lambda pair: (pair[0], pair[1]))
         )
         if not ordered:
             return error_result(self.source_url, retrieved_at, "EMPTY_RESULT")
@@ -158,7 +147,7 @@ def _parse_date_only(value: str) -> date:
     raise ValueError("unsupported Treasury observation date")
 
 
-def _optional_decimal(value: Optional[str]) -> Optional[Decimal]:
+def _optional_decimal(value: str | None) -> Decimal | None:
     if value is None or not value.strip() or value.strip() == ".":
         return None
     return Decimal(value.strip())

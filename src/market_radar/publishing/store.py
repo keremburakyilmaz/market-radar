@@ -6,10 +6,11 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Optional, Protocol
+from typing import Any, Protocol
 
 
 class ObjectStoreConflictError(RuntimeError):
@@ -23,14 +24,14 @@ class StoredObject:
     key: str
     body: bytes
     etag: str
-    content_type: Optional[str] = None
-    cache_control: Optional[str] = None
+    content_type: str | None = None
+    cache_control: str | None = None
 
 
 class ObjectStore(Protocol):
     """Minimal object-store contract required for atomic publication."""
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         """Return an object, or ``None`` when the key does not exist."""
 
         ...
@@ -42,7 +43,7 @@ class ObjectStore(Protocol):
         *,
         content_type: str,
         cache_control: str,
-        if_match: Optional[str] = None,
+        if_match: str | None = None,
         if_none_match: bool = False,
     ) -> StoredObject:
         """Store an object, enforcing any supplied write precondition."""
@@ -66,7 +67,7 @@ class LocalObjectStore:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         object_path = self._object_path(key)
         if not object_path.is_file():
             return None
@@ -88,7 +89,7 @@ class LocalObjectStore:
         *,
         content_type: str,
         cache_control: str,
-        if_match: Optional[str] = None,
+        if_match: str | None = None,
         if_none_match: bool = False,
     ) -> StoredObject:
         if if_match is not None and if_none_match:
@@ -105,15 +106,11 @@ class LocalObjectStore:
             existing = self.get(key)
             if if_none_match and existing is not None:
                 raise ObjectStoreConflictError(
-                    "object already exists while If-None-Match was required: {}".format(
-                        key
-                    )
+                    f"object already exists while If-None-Match was required: {key}"
                 )
-            if if_match is not None and (
-                existing is None or existing.etag != if_match
-            ):
+            if if_match is not None and (existing is None or existing.etag != if_match):
                 raise ObjectStoreConflictError(
-                    "object ETag changed before conditional write: {}".format(key)
+                    f"object ETag changed before conditional write: {key}"
                 )
 
             etag = self._etag(body)
@@ -147,7 +144,7 @@ class LocalObjectStore:
 
     def _metadata_path(self, key: str) -> Path:
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
-        return self.root / self._METADATA_DIRECTORY / "{}.json".format(digest)
+        return self.root / self._METADATA_DIRECTORY / f"{digest}.json"
 
     def _read_metadata(self, key: str) -> dict[str, Any]:
         metadata_path = self._metadata_path(key)
@@ -178,7 +175,7 @@ class LocalObjectStore:
     @staticmethod
     def _atomic_write(path: Path, body: bytes) -> None:
         file_descriptor, temporary_name = tempfile.mkstemp(
-            dir=str(path.parent), prefix=".{}-".format(path.name)
+            dir=str(path.parent), prefix=f".{path.name}-"
         )
         temporary_path = Path(temporary_name)
         try:
@@ -202,10 +199,10 @@ class LocalObjectStore:
     @staticmethod
     def _etag(body: bytes) -> str:
         # Quoting mirrors the ETag representation returned by S3/R2 clients.
-        return '"{}"'.format(hashlib.sha256(body).hexdigest())
+        return f'"{hashlib.sha256(body).hexdigest()}"'
 
     @staticmethod
-    def _optional_string(value: Any) -> Optional[str]:
+    def _optional_string(value: Any) -> str | None:
         return value if isinstance(value, str) else None
 
 
@@ -223,7 +220,7 @@ class Boto3R2ObjectStore:
         endpoint_url: str,
         access_key_id: str,
         secret_access_key: str,
-        client: Optional[Any] = None,
+        client: Any | None = None,
     ) -> None:
         self.bucket = bucket
         self.endpoint_url = endpoint_url
@@ -231,7 +228,7 @@ class Boto3R2ObjectStore:
         self.secret_access_key = secret_access_key
         self._client = client
 
-    def get(self, key: str) -> Optional[StoredObject]:
+    def get(self, key: str) -> StoredObject | None:
         try:
             response = self._get_client().get_object(Bucket=self.bucket, Key=key)
         except Exception as error:
@@ -255,7 +252,7 @@ class Boto3R2ObjectStore:
         *,
         content_type: str,
         cache_control: str,
-        if_match: Optional[str] = None,
+        if_match: str | None = None,
         if_none_match: bool = False,
     ) -> StoredObject:
         if if_match is not None and if_none_match:
@@ -277,9 +274,7 @@ class Boto3R2ObjectStore:
             response = self._get_client().put_object(**arguments)
         except Exception as error:
             if self._is_conflict(error):
-                raise ObjectStoreConflictError(
-                    "conditional R2 write failed for {}".format(key)
-                ) from error
+                raise ObjectStoreConflictError(f"conditional R2 write failed for {key}") from error
             raise
 
         return StoredObject(
@@ -293,11 +288,9 @@ class Boto3R2ObjectStore:
     def _get_client(self) -> Any:
         if self._client is None:
             try:
-                import boto3
+                import boto3  # type: ignore[import-untyped]
             except ImportError as error:
-                raise RuntimeError(
-                    "boto3 is required to use Boto3R2ObjectStore"
-                ) from error
+                raise RuntimeError("boto3 is required to use Boto3R2ObjectStore") from error
 
             self._client = boto3.client(
                 service_name="s3",
@@ -322,7 +315,7 @@ class Boto3R2ObjectStore:
         )
 
     @staticmethod
-    def _error_details(error: Exception) -> tuple[Optional[int], Optional[str]]:
+    def _error_details(error: Exception) -> tuple[int | None, str | None]:
         response = getattr(error, "response", None)
         if not isinstance(response, dict):
             return None, None
@@ -333,5 +326,5 @@ class Boto3R2ObjectStore:
         return status, code
 
     @staticmethod
-    def _optional_string(value: Any) -> Optional[str]:
+    def _optional_string(value: Any) -> str | None:
         return value if isinstance(value, str) else None

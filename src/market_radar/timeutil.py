@@ -21,4 +21,3 @@ def parse_utc(value: str) -> datetime:
         raise ValueError("timestamp must be an ISO-8601 UTC string ending in Z")
     parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     return parsed.astimezone(timezone.utc)
-

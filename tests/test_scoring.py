@@ -5,7 +5,6 @@ from decimal import Decimal
 from market_radar.domain import CollectedIndicator, SourceDescriptor
 from market_radar.scoring import latest_indicators, score_macro_conditions
 
-
 SOURCE = SourceDescriptor(
     source_id="official",
     name="Official source",
@@ -62,7 +61,4 @@ class MacroScoringTests(unittest.TestCase):
 
     def test_one_driver_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "at least two"):
-            score_macro_conditions(
-                latest_indicators([indicator("us-treasury-10y", 4.1)]), {}
-            )
-
+            score_macro_conditions(latest_indicators([indicator("us-treasury-10y", 4.1)]), {})

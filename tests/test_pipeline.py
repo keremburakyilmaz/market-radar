@@ -14,7 +14,6 @@ from market_radar.domain import (
 from market_radar.pipeline import PipelineRunner
 from market_radar.publishing import LocalObjectStore, Publisher
 
-
 NOW = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
 TREASURY = SourceDescriptor(
     "us-treasury-yields",

@@ -14,7 +14,6 @@ from market_radar.publishing import (
 )
 from market_radar.state import RadarState
 
-
 NOW = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
 
 
@@ -35,9 +34,7 @@ class StateRepositoryTests(unittest.TestCase):
         saved = self.repository.save(
             state,
             created_at=NOW,
-            source_snapshot_key="v1/snapshots/2026/08/23/test-{}{}.json".format(
-                "a" * 32, "a" * 32
-            ),
+            source_snapshot_key="v1/snapshots/2026/08/23/test-{}{}.json".format("a" * 32, "a" * 32),
             previous=previous,
         )
         loaded = self.repository.load()
@@ -97,4 +94,3 @@ class StateRepositoryTests(unittest.TestCase):
                 previous=current,
             )
         self.assertTrue(first.checkpoint_key.startswith("state/checkpoints/"))
-

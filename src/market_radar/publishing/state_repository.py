@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any
 
 from market_radar.canonical import canonical_json_bytes, sha256_hex
 from market_radar.state import RadarState
@@ -14,7 +14,6 @@ from market_radar.timeutil import format_utc
 
 from .publisher import JSON_CONTENT_TYPE, POINTER_CACHE_CONTROL, SNAPSHOT_CACHE_CONTROL
 from .store import ObjectStore, ObjectStoreConflictError, StoredObject
-
 
 STATE_LATEST_KEY = "state/latest.json"
 _CHECKPOINT_PATH = re.compile(
@@ -37,8 +36,8 @@ class StateIntegrityError(StateRepositoryError):
 @dataclass(frozen=True)
 class LoadedState:
     state: RadarState
-    pointer_etag: Optional[str]
-    checkpoint_key: Optional[str]
+    pointer_etag: str | None
+    checkpoint_key: str | None
 
 
 @dataclass(frozen=True)
@@ -71,12 +70,15 @@ class StateRepository:
         expected_size = checkpoint.get("sizeBytes")
         if not isinstance(key, str) or not _CHECKPOINT_PATH.fullmatch(key):
             raise StateIntegrityError("state checkpoint path is unsafe")
-        if (
-            not isinstance(expected_digest, str)
-            or not re.fullmatch(r"[a-f0-9]{64}", expected_digest)
+        if not isinstance(expected_digest, str) or not re.fullmatch(
+            r"[a-f0-9]{64}", expected_digest
         ):
             raise StateIntegrityError("state checkpoint digest is invalid")
-        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size < 1:
+        if (
+            not isinstance(expected_size, int)
+            or isinstance(expected_size, bool)
+            or expected_size < 1
+        ):
             raise StateIntegrityError("state checkpoint size is invalid")
 
         checkpoint_object = self.store.get(key)
@@ -176,13 +178,13 @@ class StateRepository:
             raise StateIntegrityError("state checkpoint Cache-Control mismatch")
 
     @staticmethod
-    def _parse_json(body: bytes, label: str) -> dict:
+    def _parse_json(body: bytes, label: str) -> dict[str, Any]:
         try:
             value = json.loads(body.decode("utf-8"), parse_constant=_reject_constant)
         except (UnicodeDecodeError, ValueError) as error:
-            raise StateIntegrityError("{} is not strict JSON".format(label)) from error
+            raise StateIntegrityError(f"{label} is not strict JSON") from error
         if not isinstance(value, dict):
-            raise StateIntegrityError("{} root must be an object".format(label))
+            raise StateIntegrityError(f"{label} root must be an object")
         return value
 
     @staticmethod
@@ -195,5 +197,4 @@ class StateRepository:
 
 
 def _reject_constant(value: str) -> None:
-    raise ValueError("non-finite JSON constant is not allowed: {}".format(value))
-
+    raise ValueError(f"non-finite JSON constant is not allowed: {value}")

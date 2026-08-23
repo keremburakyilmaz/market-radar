@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Mapping, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class SourceDescriptor:
     url: str
     license_class: str
 
-    def public_dict(self) -> dict:
+    def public_dict(self) -> dict[str, str]:
         return {
             "id": self.source_id,
             "name": self.name,
@@ -35,7 +35,7 @@ class CollectedIndicator:
     retrieved_at: datetime
     freshness: str
     source: SourceDescriptor
-    market_tags: Tuple[str, ...] = ("global",)
+    market_tags: tuple[str, ...] = ("global",)
 
 
 @dataclass(frozen=True)
@@ -46,10 +46,10 @@ class CollectedRelease:
     published_at: datetime
     retrieved_at: datetime
     source: SourceDescriptor
-    publisher: Optional[str] = None
+    publisher: str | None = None
     kind: str = "official"
     category: str = "macro"
-    market_tags: Tuple[str, ...] = ("global",)
+    market_tags: tuple[str, ...] = ("global",)
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ class CollectedCalendarEvent:
     checked_at: datetime
     tentative: bool = False
     impact: str = "high"
-    market_tags: Tuple[str, ...] = ("global",)
+    market_tags: tuple[str, ...] = ("global",)
 
 
 @dataclass(frozen=True)
@@ -72,13 +72,13 @@ class CollectedSourceHealth:
     status: str
     retrieved_at: datetime
     item_count: int
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
 
 @dataclass(frozen=True)
 class CollectionBundle:
-    indicators: Tuple[CollectedIndicator, ...]
-    releases: Tuple[CollectedRelease, ...]
-    calendar: Tuple[CollectedCalendarEvent, ...]
-    source_health: Tuple[CollectedSourceHealth, ...]
+    indicators: tuple[CollectedIndicator, ...]
+    releases: tuple[CollectedRelease, ...]
+    calendar: tuple[CollectedCalendarEvent, ...]
+    source_health: tuple[CollectedSourceHealth, ...]
     histories: Mapping[str, Sequence[CollectedIndicator]] = field(default_factory=dict)

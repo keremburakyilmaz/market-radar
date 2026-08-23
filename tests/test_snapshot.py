@@ -13,7 +13,6 @@ from market_radar.domain import (
 from market_radar.snapshot import build_snapshot
 from market_radar.state import RadarState
 
-
 NOW = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
 TREASURY = SourceDescriptor(
     "us-treasury",

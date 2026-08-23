@@ -8,20 +8,20 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable
 
 from market_radar.canonical import canonical_json_bytes, sha256_hex
 from market_radar.domain import CollectionBundle
 from market_radar.publishing import (
     LATEST_KEY,
     LoadedState,
-    PublishResult,
     Publisher,
+    PublishResult,
     StateRepository,
 )
 from market_radar.snapshot import build_snapshot
 from market_radar.state import RadarState, load_state, save_state
-from market_radar.timeutil import format_utc, utc_now
+from market_radar.timeutil import utc_now
 from market_radar.validation import validate_manifest, validate_snapshot
 
 
@@ -38,10 +38,10 @@ class PipelineOutcome:
     run_id: str
     no_op: bool
     published: bool
-    candidate_path: Optional[Path]
+    candidate_path: Path | None
     report_path: Path
-    snapshot: Optional[dict]
-    publish_result: Optional[PublishResult]
+    snapshot: dict[str, Any] | None
+    publish_result: PublishResult | None
 
 
 class PipelineRunner:
@@ -50,9 +50,9 @@ class PipelineRunner:
         *,
         collector: Callable[[datetime], CollectionBundle],
         output_dir: Path,
-        publisher: Optional[Publisher] = None,
-        state_repository: Optional[StateRepository] = None,
-        local_state_path: Optional[Path] = None,
+        publisher: Publisher | None = None,
+        state_repository: StateRepository | None = None,
+        local_state_path: Path | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if state_repository is not None and local_state_path is not None:
@@ -68,7 +68,7 @@ class PipelineRunner:
         self,
         *,
         publish: bool,
-        slot: Optional[str] = None,
+        slot: str | None = None,
     ) -> PipelineOutcome:
         started_at = self._now()
         run_id = "run-{}".format(started_at.strftime("%Y%m%dt%H%M%Sz").lower())
@@ -134,7 +134,7 @@ class PipelineRunner:
             publish_result,
         )
 
-    def _load_state(self) -> tuple[RadarState, Optional[LoadedState]]:
+    def _load_state(self) -> tuple[RadarState, LoadedState | None]:
         if self.state_repository is not None:
             loaded = self.state_repository.load()
             return loaded.state, loaded
@@ -148,7 +148,7 @@ class PipelineRunner:
         *,
         created_at: datetime,
         snapshot_key: str,
-        loaded_remote: Optional[LoadedState],
+        loaded_remote: LoadedState | None,
     ) -> None:
         if self.state_repository is not None:
             if loaded_remote is None:
@@ -170,7 +170,9 @@ class PipelineRunner:
         if latest_object is None or snapshot_object is None:
             raise PublicationSmokeError("published objects are missing during smoke verification")
         try:
-            manifest = json.loads(latest_object.body.decode("utf-8"), parse_constant=_reject_constant)
+            manifest = json.loads(
+                latest_object.body.decode("utf-8"), parse_constant=_reject_constant
+            )
             snapshot = json.loads(
                 snapshot_object.body.decode("utf-8"), parse_constant=_reject_constant
             )
@@ -186,14 +188,14 @@ class PipelineRunner:
         if pointer["sha256"] != sha256_hex(snapshot_object.body):
             raise PublicationSmokeError("latest manifest hash does not match the snapshot")
 
-    def _write_candidate(self, snapshot: dict) -> Path:
+    def _write_candidate(self, snapshot: dict[str, Any]) -> Path:
         generated = snapshot["generatedAt"].replace(":", "-")
-        path = self.output_dir / "candidates" / "{}.json".format(generated)
+        path = self.output_dir / "candidates" / f"{generated}.json"
         _atomic_write(path, canonical_json_bytes(snapshot))
         return path
 
-    def _write_report(self, run_id: str, report: dict) -> Path:
-        path = self.output_dir / "reports" / "{}.json".format(run_id)
+    def _write_report(self, run_id: str, report: dict[str, Any]) -> Path:
+        path = self.output_dir / "reports" / f"{run_id}.json"
         _atomic_write(path, canonical_json_bytes(report))
         return path
 
@@ -220,4 +222,4 @@ def _atomic_write(path: Path, body: bytes) -> None:
 
 
 def _reject_constant(value: str) -> None:
-    raise ValueError("non-finite JSON value is forbidden: {}".format(value))
+    raise ValueError(f"non-finite JSON value is forbidden: {value}")

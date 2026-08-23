@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any
 
 from market_radar.domain import (
     CollectedCalendarEvent,
@@ -19,7 +20,6 @@ from market_radar.scoring import MacroConditions, latest_indicators, score_macro
 from market_radar.state import RadarState
 from market_radar.timeutil import format_utc, parse_utc
 from market_radar.validation import validate_snapshot
-
 
 CORE_INDICATOR_IDS = ("us-treasury-10y", "us-curve-2s10s", "fed-broad-usd")
 MAX_DEVELOPMENTS = 8
@@ -37,7 +37,7 @@ _FALLBACK_RETENTION_SECONDS = 2_592_000
 
 @dataclass(frozen=True)
 class SnapshotBuildResult:
-    snapshot: dict
+    snapshot: dict[str, Any]
     next_state: RadarState
 
 
@@ -58,7 +58,7 @@ def _source_type(source: SourceDescriptor) -> str:
     return "official"
 
 
-def _provenance(source: SourceDescriptor, retrieved_at: datetime) -> dict:
+def _provenance(source: SourceDescriptor, retrieved_at: datetime) -> dict[str, Any]:
     return {
         "sourceId": source.source_id,
         "sourceName": source.name[:80],
@@ -68,7 +68,7 @@ def _provenance(source: SourceDescriptor, retrieved_at: datetime) -> dict:
     }
 
 
-def _derive_curve(current: Mapping[str, CollectedIndicator]) -> Optional[CollectedIndicator]:
+def _derive_curve(current: Mapping[str, CollectedIndicator]) -> CollectedIndicator | None:
     if "us-curve-2s10s" in current:
         return None
     two_year = current.get("us-treasury-2y")
@@ -84,7 +84,7 @@ def _derive_curve(current: Mapping[str, CollectedIndicator]) -> Optional[Collect
         label="US 2s10s curve",
         value=value,
         unit="basis-points",
-        display_value="{:+.0f} bp".format(value),
+        display_value=f"{value:+.0f} bp",
         observed_at=observed_at,
         retrieved_at=retrieved_at,
         freshness=freshness,
@@ -97,7 +97,7 @@ def _indicator_from_record(
     indicator_id: str,
     record: Mapping[str, object],
     generated_at: datetime,
-) -> Optional[CollectedIndicator]:
+) -> CollectedIndicator | None:
     try:
         observed_at = parse_utc(str(record["observedAt"]))
         retrieved_at = parse_utc(str(record["retrievedAt"]))
@@ -131,7 +131,7 @@ def _indicator_from_record(
         return None
 
 
-def _indicator_record(indicator: CollectedIndicator) -> dict:
+def _indicator_record(indicator: CollectedIndicator) -> dict[str, Any]:
     return {
         "label": indicator.label,
         "value": float(indicator.value),
@@ -145,7 +145,7 @@ def _indicator_record(indicator: CollectedIndicator) -> dict:
 
 
 def _restore_last_good_indicators(
-    current: Dict[str, CollectedIndicator],
+    current: dict[str, CollectedIndicator],
     previous_state: RadarState,
     generated_at: datetime,
 ) -> None:
@@ -159,7 +159,7 @@ def _restore_last_good_indicators(
 
 def _indicator_change(
     indicator: CollectedIndicator, previous_values: Mapping[str, float]
-) -> Optional[dict]:
+) -> dict[str, Any] | None:
     previous = previous_values.get(indicator.indicator_id)
     if previous is None:
         return None
@@ -173,13 +173,13 @@ def _indicator_change(
         direction = "down"
 
     if indicator.indicator_id in {"us-treasury-2y", "us-treasury-10y"}:
-        display = "{:+.0f} bp".format(delta * 100)
+        display = f"{delta * 100:+.0f} bp"
     elif indicator.indicator_id == "us-curve-2s10s":
-        display = "{:+.0f} bp".format(delta)
+        display = f"{delta:+.0f} bp"
     elif indicator.indicator_id == "cbrt-usd-try":
-        display = "{:+.4f}".format(delta)
+        display = f"{delta:+.4f}"
     else:
-        display = "{:+.2f}".format(delta)
+        display = f"{delta:+.2f}"
     return {
         "rawValue": round(delta, 6),
         "displayValue": display,
@@ -225,7 +225,7 @@ def _indicator_dict(
     previous_values: Mapping[str, float],
     generated_at: datetime,
     conditions: Mapping[str, object],
-) -> dict:
+) -> dict[str, Any]:
     age_seconds = max(0, int((generated_at - indicator.observed_at).total_seconds()))
     age_seconds = min(age_seconds, _FALLBACK_RETENTION_SECONDS)
     max_age = _FRESHNESS_SECONDS.get(indicator.indicator_id, 604_800)
@@ -291,7 +291,7 @@ def _impact(category: str, kind: str) -> str:
     return "medium"
 
 
-def _development_dict(release: CollectedRelease) -> dict:
+def _development_dict(release: CollectedRelease) -> dict[str, Any]:
     category = _category_for(release)
     return {
         "id": release.release_id,
@@ -305,7 +305,7 @@ def _development_dict(release: CollectedRelease) -> dict:
     }
 
 
-def _story_dict(release: CollectedRelease) -> dict:
+def _story_dict(release: CollectedRelease) -> dict[str, Any]:
     category = _category_for(release)
     if release.kind == "discovery":
         summary = (
@@ -314,8 +314,8 @@ def _story_dict(release: CollectedRelease) -> dict:
         )
     else:
         summary = (
-            "Official release metadata is retained with its source link; Market Radar does not copy "
-            "the full release text."
+            "Official release metadata is retained with its source link; "
+            "Market Radar does not copy the full release text."
         )
     return {
         "id": release.release_id,
@@ -357,7 +357,7 @@ def _country_code(region: str) -> str:
     return mapping.get(region, "EU")
 
 
-def _calendar_dict(event: CollectedCalendarEvent) -> dict:
+def _calendar_dict(event: CollectedCalendarEvent) -> dict[str, Any]:
     category = _calendar_category(event.name)
     tags = list(dict.fromkeys((*event.market_tags, category)))
     source = SourceDescriptor(
@@ -385,8 +385,8 @@ def _calendar_dict(event: CollectedCalendarEvent) -> dict:
     }
 
 
-def _dedupe_releases(releases: Iterable[CollectedRelease]) -> List[CollectedRelease]:
-    by_url: Dict[str, CollectedRelease] = {}
+def _dedupe_releases(releases: Iterable[CollectedRelease]) -> list[CollectedRelease]:
+    by_url: dict[str, CollectedRelease] = {}
     for release in releases:
         existing = by_url.get(release.url)
         if existing is None or release.published_at > existing.published_at:
@@ -403,7 +403,7 @@ def _source_health_status(status: str) -> str:
     return "unavailable"
 
 
-def _source_market_tags(source_id: str) -> list:
+def _source_market_tags(source_id: str) -> list[str]:
     if "cbrt" in source_id or "turkey" in source_id:
         return ["turkey"]
     if "treasury" in source_id or "fred" in source_id or "fed-" in source_id:
@@ -413,8 +413,8 @@ def _source_market_tags(source_id: str) -> list:
     return ["global"]
 
 
-def _source_payload(bundle: CollectionBundle) -> list:
-    output = []
+def _source_payload(bundle: CollectionBundle) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
     for health in sorted(bundle.source_health, key=lambda item: item.source.source_id):
         status = _source_health_status(health.status)
         if status == "healthy":
@@ -444,27 +444,27 @@ def _all_market_tags(
     current: Mapping[str, CollectedIndicator],
     releases: Sequence[CollectedRelease],
     calendar: Sequence[CollectedCalendarEvent],
-) -> list:
+) -> list[str]:
     tags = ["global"]
-    for item in current.values():
-        tags.extend(item.market_tags)
-    for item in releases:
-        tags.extend(item.market_tags)
-    for item in calendar:
-        tags.extend(item.market_tags)
+    for indicator in current.values():
+        tags.extend(indicator.market_tags)
+    for release in releases:
+        tags.extend(release.market_tags)
+    for event in calendar:
+        tags.extend(event.market_tags)
     return list(dict.fromkeys(_slug(tag) for tag in tags))[:12]
 
 
 def _digest_dict(
     conditions: MacroConditions,
     conditions_payload: Mapping[str, object],
-    stories: Sequence[dict],
+    stories: Sequence[Mapping[str, Any]],
     generated_at: datetime,
     market_tags: Sequence[str],
-) -> dict:
+) -> dict[str, Any]:
     drivers = conditions_payload["drivers"]
     assert isinstance(drivers, list)
-    highlights = []
+    highlights: list[dict[str, Any]] = []
     for index, driver in enumerate(
         sorted(drivers, key=lambda item: abs(float(item["contributionPoints"])), reverse=True)[:3]
     ):
@@ -483,7 +483,7 @@ def _digest_dict(
         "periodStart": format_utc(generated_at - timedelta(hours=24)),
         "periodEnd": format_utc(generated_at),
         "generatedAt": format_utc(generated_at),
-        "title": "Macro conditions are {}".format(public_label),
+        "title": f"Macro conditions are {public_label}",
         "summary": conditions.summary,
         "highlights": highlights,
         "storyIds": [story["id"] for story in stories],
@@ -497,10 +497,10 @@ def build_snapshot(
     previous_state: RadarState,
     *,
     generated_at: datetime,
-    started_at: Optional[datetime] = None,
-    run_id: Optional[str] = None,
+    started_at: datetime | None = None,
+    run_id: str | None = None,
     valid_for: timedelta = timedelta(hours=8, minutes=30),
-    successful_slot: Optional[str] = None,
+    successful_slot: str | None = None,
 ) -> SnapshotBuildResult:
     if generated_at.tzinfo is None:
         raise ValueError("generated_at must be timezone-aware")
@@ -508,9 +508,7 @@ def build_snapshot(
     started_at = (started_at or generated_at).astimezone(timezone.utc).replace(microsecond=0)
     if started_at > generated_at:
         raise ValueError("started_at must not be after generated_at")
-    run_id = run_id or "run-{}".format(
-        generated_at.strftime("%Y%m%dt%H%M%Sz").lower()
-    )
+    run_id = run_id or "run-{}".format(generated_at.strftime("%Y%m%dt%H%M%Sz").lower())
 
     current = latest_indicators(bundle.indicators)
     _restore_last_good_indicators(current, previous_state, generated_at)
@@ -598,9 +596,7 @@ def build_snapshot(
             )
             for indicator in sorted(current.values(), key=lambda item: item.indicator_id)
         ],
-        "priorityDevelopments": [
-            _development_dict(release) for release in priority_releases
-        ],
+        "priorityDevelopments": [_development_dict(release) for release in priority_releases],
         "stories": story_payload,
         "calendar": [_calendar_dict(event) for event in upcoming_events],
         "digest": _digest_dict(
