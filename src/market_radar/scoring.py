@@ -133,7 +133,7 @@ def score_macro_conditions(
 
     The method deliberately makes no equity-market or volatility claim. Missing
     drivers are omitted and the remaining weights are normalized. At least two
-    independent drivers are required to produce a public score.
+    available drivers are required to produce a public score.
     """
 
     candidates = (
@@ -180,4 +180,3 @@ def latest_indicators(
         for latest in [_latest(values)]
         if latest is not None
     }
-

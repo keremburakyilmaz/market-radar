@@ -7,7 +7,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from market_radar.canonical import canonical_json_bytes
 
@@ -87,4 +87,3 @@ def save_state(path: Path, state: RadarState) -> None:
 
 def _reject_constant(value: str) -> None:
     raise ValueError("non-finite state value is not allowed: {}".format(value))
-
