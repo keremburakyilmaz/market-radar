@@ -15,6 +15,7 @@ from market_radar.domain import CollectionBundle
 from market_radar.publishing import (
     LATEST_KEY,
     LoadedState,
+    PublicationControlRepository,
     Publisher,
     PublishResult,
     StateRepository,
@@ -52,6 +53,7 @@ class PipelineRunner:
         output_dir: Path,
         publisher: Publisher | None = None,
         state_repository: StateRepository | None = None,
+        control_repository: PublicationControlRepository | None = None,
         local_state_path: Path | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -61,6 +63,7 @@ class PipelineRunner:
         self.output_dir = Path(output_dir)
         self.publisher = publisher
         self.state_repository = state_repository
+        self.control_repository = control_repository
         self.local_state_path = Path(local_state_path) if local_state_path else None
         self.clock = clock
 
@@ -72,6 +75,28 @@ class PipelineRunner:
     ) -> PipelineOutcome:
         started_at = self._now()
         run_id = "run-{}".format(started_at.strftime("%Y%m%dt%H%M%Sz").lower())
+        if publish and self.control_repository is not None:
+            control = self.control_repository.load().control
+            if control.paused:
+                report_path = self._write_report(
+                    run_id,
+                    {
+                        "runId": run_id,
+                        "status": "no-op",
+                        "reason": "publication-paused",
+                        "slot": slot,
+                        "published": False,
+                    },
+                )
+                return PipelineOutcome(
+                    run_id,
+                    True,
+                    False,
+                    None,
+                    report_path,
+                    None,
+                    None,
+                )
         state, loaded_remote = self._load_state()
         if publish and slot and slot in state.successful_slots:
             report_path = self._write_report(

@@ -12,7 +12,7 @@ from market_radar.domain import (
     SourceDescriptor,
 )
 from market_radar.pipeline import PipelineRunner
-from market_radar.publishing import LocalObjectStore, Publisher
+from market_radar.publishing import LocalObjectStore, PublicationControlRepository, Publisher
 
 NOW = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
 TREASURY = SourceDescriptor(
@@ -126,3 +126,30 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(outcome.run_id, "run-20260823t120000z")
         self.assertEqual(outcome.snapshot["pipeline"]["runId"], outcome.run_id)
         self.assertEqual(report["runId"], outcome.run_id)
+
+    def test_private_pause_prevents_collection_and_publication(self):
+        control_repository = PublicationControlRepository(LocalObjectStore(self.root / "control"))
+        control_repository.pause(
+            reason="investigating upstream data",
+            actor="operator",
+            updated_at=NOW,
+            previous=control_repository.load(),
+        )
+        runner = PipelineRunner(
+            collector=self.collect,
+            output_dir=self.root / "out",
+            publisher=Publisher(self.store, clock=lambda: NOW),
+            control_repository=control_repository,
+            local_state_path=self.root / "state" / "state.json",
+            clock=lambda: NOW,
+        )
+
+        outcome = runner.run(publish=True, slot="2026-08-23T12")
+
+        self.assertTrue(outcome.no_op)
+        self.assertFalse(outcome.published)
+        self.assertEqual(self.calls, 0)
+        self.assertIsNone(self.store.get("v1/latest.json"))
+        self.assertFalse((self.root / "state" / "state.json").exists())
+        report = json.loads(outcome.report_path.read_text())
+        self.assertEqual(report["reason"], "publication-paused")
