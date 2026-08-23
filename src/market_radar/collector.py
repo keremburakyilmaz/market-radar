@@ -314,6 +314,7 @@ def _normalize_releases(
                 published_at=timestamp,
                 retrieved_at=result.retrieved_at,
                 source=job.source,
+                publisher=item.publisher,
                 kind=kind,
                 category=(item.category or "macro")[:80],
                 market_tags=job.market_tags,

@@ -28,6 +28,12 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.data-files]
+"share/market-radar/schemas" = [
+  "schemas/manifest.v1.schema.json",
+  "schemas/snapshot.v1.schema.json",
+]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 100
@@ -39,4 +45,3 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.9"
 strict = true
 files = ["src"]
-

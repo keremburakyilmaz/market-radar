@@ -18,6 +18,12 @@ class StateTests(unittest.TestCase):
             expected = RadarState(
                 previous_snapshot_id="mr-test",
                 indicator_values={"us-treasury-10y": 4.31},
+                indicator_records={
+                    "us-treasury-10y": {
+                        "label": "US Treasury 10Y",
+                        "value": 4.31,
+                    }
+                },
                 seen_release_urls=tuple("https://example.com/{}".format(index) for index in range(2005)),
                 successful_slots=("2026-08-23T12",),
             )
@@ -27,6 +33,7 @@ class StateTests(unittest.TestCase):
 
             self.assertEqual(actual.previous_snapshot_id, "mr-test")
             self.assertEqual(actual.indicator_values["us-treasury-10y"], 4.31)
+            self.assertEqual(actual.indicator_records["us-treasury-10y"]["value"], 4.31)
             self.assertEqual(len(actual.seen_release_urls), 2000)
             self.assertNotIn("https://example.com/0", actual.seen_release_urls)
 
@@ -36,4 +43,3 @@ class StateTests(unittest.TestCase):
             path.write_text(json.dumps({"stateVersion": 2}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "unsupported"):
                 load_state(path)
-

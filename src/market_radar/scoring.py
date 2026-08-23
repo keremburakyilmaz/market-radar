@@ -9,26 +9,14 @@ from typing import Dict, Mapping, Optional, Sequence, Tuple
 from market_radar.domain import CollectedIndicator
 
 
-METHODOLOGY_VERSION = "macro-pressure-v1"
-
-
 @dataclass(frozen=True)
 class MacroDriver:
     driver_id: str
+    indicator_id: str
     label: str
     score: float
     weight: float
     explanation: str
-
-    def public_dict(self) -> dict:
-        return {
-            "id": self.driver_id,
-            "label": self.label,
-            "score": round(self.score, 1),
-            "weight": self.weight,
-            "explanation": self.explanation,
-        }
-
 
 @dataclass(frozen=True)
 class MacroConditions:
@@ -38,12 +26,62 @@ class MacroConditions:
     drivers: Tuple[MacroDriver, ...]
 
     def public_dict(self) -> dict:
+        weight_total = sum(driver.weight for driver in self.drivers)
+        driver_payload = []
+        contribution_total = 0.0
+        for index, driver in enumerate(self.drivers):
+            normalized_weight = driver.weight / weight_total
+            normalized_signal = _clamp((driver.score - 50.0) / 50.0, -1.0, 1.0)
+            contribution = normalized_weight * (driver.score - 50.0)
+            if index == len(self.drivers) - 1:
+                contribution = round(self.score, 1) - 50.0 - contribution_total
+            contribution = round(contribution, 2)
+            contribution_total += contribution
+            if normalized_signal > 0.1:
+                direction = "restrictive"
+            elif normalized_signal < -0.1:
+                direction = "supportive"
+            else:
+                direction = "balanced"
+            driver_payload.append(
+                {
+                    "indicatorId": driver.indicator_id,
+                    "label": driver.label,
+                    "weight": round(normalized_weight, 4),
+                    "normalizedSignal": round(normalized_signal, 4),
+                    "contributionPoints": contribution,
+                    "direction": direction,
+                    "explanation": driver.explanation,
+                    "marketTags": _driver_tags(driver.indicator_id),
+                }
+            )
+
+        if self.score < 40:
+            public_label = "supportive"
+        elif self.score < 60:
+            public_label = "balanced"
+        else:
+            public_label = "restrictive"
         return {
             "score": round(self.score, 1),
-            "label": self.label,
+            "label": public_label,
             "summary": self.summary,
-            "methodologyVersion": METHODOLOGY_VERSION,
-            "drivers": [driver.public_dict() for driver in self.drivers],
+            "scoreScale": {
+                "minimum": 0,
+                "maximum": 100,
+                "higherMeans": "More restrictive macro-financial conditions",
+            },
+            "methodology": {
+                "id": "macro-conditions-v1",
+                "version": "1.0.0",
+                "description": (
+                    "A deterministic weighted score built only from the published official macro "
+                    "indicators. Missing drivers are omitted and remaining weights are normalized."
+                ),
+                "baselineScore": 50,
+                "formula": "score = clamp(baselineScore + sum(driver contributionPoints), 0, 100)",
+            },
+            "drivers": driver_payload,
         }
 
 
@@ -67,11 +105,13 @@ def _long_rate_driver(
     score = _clamp((value - 2.5) / 3.0 * 100.0)
     return MacroDriver(
         driver_id="us-10y-level",
+        indicator_id="us-treasury-10y",
         label="US 10Y level",
         score=score,
         weight=0.45,
         explanation=(
-            "Higher long-term Treasury yields increase the discount-rate and financing-pressure input."
+            "Higher long-term Treasury yields increase the discount-rate and "
+            "financing-pressure input."
         ),
     )
 
@@ -91,11 +131,13 @@ def _curve_driver(
     score = _clamp(50.0 - spread_basis_points * 0.5)
     return MacroDriver(
         driver_id="us-2s10s-curve",
+        indicator_id="us-curve-2s10s",
         label="US 2s10s curve",
         score=score,
         weight=0.30,
         explanation=(
-            "A more inverted curve raises the slowdown-pressure input; a steeper positive curve lowers it."
+            "A more inverted curve raises the slowdown-pressure input; a steeper positive "
+            "curve lowers it."
         ),
     )
 
@@ -116,6 +158,7 @@ def _broad_usd_driver(
     direction = "strengthening" if change_percent > 0 else "easing"
     return MacroDriver(
         driver_id="broad-usd-momentum",
+        indicator_id="fed-broad-usd",
         label="Broad USD momentum",
         score=score,
         weight=0.25,
@@ -180,3 +223,9 @@ def latest_indicators(
         for latest in [_latest(values)]
         if latest is not None
     }
+
+
+def _driver_tags(indicator_id: str) -> list:
+    if indicator_id == "fed-broad-usd":
+        return ["global", "united-states", "fx"]
+    return ["global", "united-states", "rates"]

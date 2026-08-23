@@ -30,7 +30,7 @@ from market_radar.validation import validate_manifest  # noqa: E402
 def snapshot(value: int = 1):
     return {
         "schemaVersion": 1,
-        "id": "snapshot-test",
+        "id": "mr-20260823t123456z",
         "generatedAt": "2026-08-23T12:34:56Z",
         "validUntil": "2026-08-23T20:34:56Z",
         "status": "healthy",
@@ -114,14 +114,14 @@ class PublishingTests(unittest.TestCase):
             "nested": {"z": 1, "a": [3, 2, 1]},
             "generatedAt": "2026-08-23T12:34:56Z",
             "validUntil": "2026-08-23T20:34:56Z",
-            "id": "snapshot-test",
+            "id": "mr-20260823t123456z",
             "schemaVersion": 1,
             "status": "healthy",
         }
         second = {
             "status": "healthy",
             "schemaVersion": 1,
-            "id": "snapshot-test",
+            "id": "mr-20260823t123456z",
             "validUntil": "2026-08-23T20:34:56Z",
             "generatedAt": "2026-08-23T12:34:56Z",
             "nested": {"a": [3, 2, 1], "z": 1},

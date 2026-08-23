@@ -46,6 +46,7 @@ class CollectedRelease:
     published_at: datetime
     retrieved_at: datetime
     source: SourceDescriptor
+    publisher: Optional[str] = None
     kind: str = "official"
     category: str = "macro"
     market_tags: Tuple[str, ...] = ("global",)
@@ -81,4 +82,3 @@ class CollectionBundle:
     calendar: Tuple[CollectedCalendarEvent, ...]
     source_health: Tuple[CollectedSourceHealth, ...]
     histories: Mapping[str, Sequence[CollectedIndicator]] = field(default_factory=dict)
-

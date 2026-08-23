@@ -19,6 +19,7 @@ STATE_VERSION = 1
 class RadarState:
     previous_snapshot_id: Optional[str] = None
     indicator_values: Mapping[str, float] = field(default_factory=dict)
+    indicator_records: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     seen_release_urls: Tuple[str, ...] = ()
     successful_slots: Tuple[str, ...] = ()
 
@@ -27,6 +28,9 @@ class RadarState:
             "stateVersion": STATE_VERSION,
             "previousSnapshotId": self.previous_snapshot_id,
             "indicatorValues": dict(sorted(self.indicator_values.items())),
+            "indicatorRecords": {
+                key: dict(value) for key, value in sorted(self.indicator_records.items())
+            },
             "seenReleaseUrls": list(self.seen_release_urls[-2000:]),
             "successfulSlots": list(self.successful_slots[-500:]),
         }
@@ -38,8 +42,12 @@ class RadarState:
         raw_values = value.get("indicatorValues", {})
         raw_urls = value.get("seenReleaseUrls", [])
         raw_slots = value.get("successfulSlots", [])
-        if not isinstance(raw_values, dict) or not isinstance(raw_urls, list) or not isinstance(
-            raw_slots, list
+        raw_records = value.get("indicatorRecords", {})
+        if (
+            not isinstance(raw_values, dict)
+            or not isinstance(raw_records, dict)
+            or not isinstance(raw_urls, list)
+            or not isinstance(raw_slots, list)
         ):
             raise ValueError("invalid state shape")
         indicator_values = {
@@ -54,7 +62,14 @@ class RadarState:
                 else None
             ),
             indicator_values=indicator_values,
-            seen_release_urls=tuple(str(item) for item in raw_urls if isinstance(item, str))[-2000:],
+            indicator_records={
+                str(key): dict(record)
+                for key, record in raw_records.items()
+                if isinstance(record, dict)
+            },
+            seen_release_urls=tuple(
+                str(item) for item in raw_urls if isinstance(item, str)
+            )[-2000:],
             successful_slots=tuple(str(item) for item in raw_slots if isinstance(item, str))[-500:],
         )
 

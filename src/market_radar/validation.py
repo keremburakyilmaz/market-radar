@@ -1,4 +1,4 @@
-"""Fail-closed semantic validation for public Market Radar payloads."""
+"""Fail-closed schema and semantic validation for public v1 payloads."""
 
 from __future__ import annotations
 
@@ -6,18 +6,18 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from market_radar.schema_validation import validate_schema
 from market_radar.timeutil import parse_utc
 
 
 SNAPSHOT_PATH_PATTERN = re.compile(
-    r"^v1/snapshots/\d{4}/\d{2}/\d{2}/[A-Za-z0-9._-]+-[a-f0-9]{12,64}\.json$"
+    r"^v1/snapshots/"
+    r"(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/"
+    r"(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)-"
+    r"(?P<sha256>[a-f0-9]{64})\.json$"
 )
-SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
-ALLOWED_PIPELINE_STATUSES = {"healthy", "degraded"}
-ALLOWED_FRESHNESS = {"fresh", "stale", "unavailable"}
 
 
 @dataclass(frozen=True)
@@ -29,71 +29,42 @@ class ValidationIssue:
 class ContractValidationError(ValueError):
     def __init__(self, issues: Sequence[ValidationIssue]):
         self.issues = tuple(issues)
-        detail = "; ".join(f"{issue.path}: {issue.message}" for issue in issues)
+        detail = "; ".join("{}: {}".format(issue.path, issue.message) for issue in issues)
         super().__init__(detail)
 
 
-def _expect_mapping(value: Any, path: str, issues: List[ValidationIssue]) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        issues.append(ValidationIssue(path, "must be an object"))
-        return {}
-    return value
-
-
-def _expect_list(value: Any, path: str, issues: List[ValidationIssue]) -> List[Any]:
-    if not isinstance(value, list):
-        issues.append(ValidationIssue(path, "must be an array"))
-        return []
-    return value
-
-
-def _require_keys(
-    value: Mapping[str, Any], required: Iterable[str], path: str, issues: List[ValidationIssue]
-) -> None:
-    for key in required:
-        if key not in value:
-            issues.append(ValidationIssue(f"{path}.{key}", "is required"))
-
-
-def _parse_timestamp(value: Any, path: str, issues: List[ValidationIssue]) -> Optional[datetime]:
-    if not isinstance(value, str):
-        issues.append(ValidationIssue(path, "must be a UTC timestamp string"))
-        return None
-    try:
-        return parse_utc(value)
-    except (TypeError, ValueError):
-        issues.append(ValidationIssue(path, "must be ISO-8601 UTC ending in Z"))
-        return None
-
-
-def _validate_https(value: Any, path: str, issues: List[ValidationIssue]) -> None:
-    if not isinstance(value, str):
-        issues.append(ValidationIssue(path, "must be a URL string"))
+def _schema_gate(value: Any, schema_name: str) -> None:
+    raw_errors = validate_schema(value, schema_name)
+    if not raw_errors:
         return
-    parsed = urlparse(value)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-        issues.append(ValidationIssue(path, "must be an absolute HTTPS URL without credentials"))
+    issues = []
+    for error in raw_errors:
+        path, separator, message = error.partition(": ")
+        issues.append(ValidationIssue(path if separator else "$", message or error))
+    raise ContractValidationError(issues)
 
 
 def _walk_json(value: Any, path: str, issues: List[ValidationIssue]) -> None:
     if isinstance(value, float) and not math.isfinite(value):
         issues.append(ValidationIssue(path, "must not contain NaN or infinity"))
     elif isinstance(value, str):
-        if "<script" in value.lower() or "javascript:" in value.lower():
+        lowered = value.lower()
+        if "<script" in lowered or "javascript:" in lowered:
             issues.append(ValidationIssue(path, "contains unsafe executable content"))
     elif isinstance(value, Mapping):
         for key, child in value.items():
-            _walk_json(child, f"{path}.{key}", issues)
+            _walk_json(child, "{}.{}".format(path, key), issues)
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _walk_json(child, f"{path}[{index}]", issues)
+            _walk_json(child, "{}[{}]".format(path, index), issues)
 
 
-def _validate_source(source: Any, path: str, issues: List[ValidationIssue]) -> None:
-    item = _expect_mapping(source, path, issues)
-    _require_keys(item, ("id", "name", "url"), path, issues)
-    if "url" in item:
-        _validate_https(item["url"], f"{path}.url", issues)
+def _timestamp(value: str, path: str, issues: List[ValidationIssue]) -> Optional[datetime]:
+    try:
+        return parse_utc(value)
+    except (TypeError, ValueError):
+        issues.append(ValidationIssue(path, "must be canonical ISO-8601 UTC"))
+        return None
 
 
 def validate_snapshot(
@@ -102,37 +73,23 @@ def validate_snapshot(
     now: Optional[datetime] = None,
     enforce_publish_time: bool = False,
 ) -> Dict[str, Any]:
-    """Validate semantic invariants not expressible safely in JSON Schema alone."""
+    """Validate the closed schema plus cross-field and scoring invariants."""
 
+    _schema_gate(snapshot, "snapshot.v1.schema.json")
+    root = dict(snapshot)
     issues: List[ValidationIssue] = []
-    root = _expect_mapping(snapshot, "$", issues)
-    _require_keys(
-        root,
-        (
-            "schemaVersion",
-            "id",
-            "generatedAt",
-            "validUntil",
-            "pipeline",
-            "macroConditions",
-            "indicators",
-            "priorityDevelopments",
-            "stories",
-            "calendar",
-            "digest",
-            "sources",
-        ),
-        "$",
-        issues,
-    )
 
-    if root.get("schemaVersion") != 1:
-        issues.append(ValidationIssue("$.schemaVersion", "unsupported schema version"))
-
-    generated_at = _parse_timestamp(root.get("generatedAt"), "$.generatedAt", issues)
-    valid_until = _parse_timestamp(root.get("validUntil"), "$.validUntil", issues)
+    generated_at = _timestamp(root["generatedAt"], "$.generatedAt", issues)
+    valid_until = _timestamp(root["validUntil"], "$.validUntil", issues)
+    pipeline = root["pipeline"]
+    started_at = _timestamp(pipeline["startedAt"], "$.pipeline.startedAt", issues)
+    completed_at = _timestamp(pipeline["completedAt"], "$.pipeline.completedAt", issues)
     if generated_at and valid_until and valid_until <= generated_at:
         issues.append(ValidationIssue("$.validUntil", "must be after generatedAt"))
+    if started_at and completed_at and completed_at < started_at:
+        issues.append(ValidationIssue("$.pipeline.completedAt", "must not precede startedAt"))
+    if completed_at and generated_at and completed_at > generated_at + timedelta(minutes=5):
+        issues.append(ValidationIssue("$.pipeline.completedAt", "must not be after generation"))
 
     if enforce_publish_time and generated_at:
         clock = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -141,118 +98,132 @@ def validate_snapshot(
         if generated_at < clock - timedelta(hours=2):
             issues.append(ValidationIssue("$.generatedAt", "candidate is too old to publish"))
 
-    pipeline = _expect_mapping(root.get("pipeline"), "$.pipeline", issues)
-    _require_keys(pipeline, ("status", "coverage"), "$.pipeline", issues)
-    if pipeline.get("status") not in ALLOWED_PIPELINE_STATUSES:
-        issues.append(ValidationIssue("$.pipeline.status", "must be healthy or degraded"))
-
-    conditions = _expect_mapping(root.get("macroConditions"), "$.macroConditions", issues)
-    _require_keys(
-        conditions,
-        ("score", "label", "summary", "methodologyVersion", "drivers"),
-        "$.macroConditions",
-        issues,
+    coverage = pipeline["coverage"]
+    counted_sources = (
+        coverage["successfulSources"] + coverage["staleSources"] + coverage["failedSources"]
     )
-    score = conditions.get("score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 100:
-        issues.append(ValidationIssue("$.macroConditions.score", "must be a number from 0 to 100"))
-
-    indicators = _expect_list(root.get("indicators"), "$.indicators", issues)
-    if len(indicators) > 50:
-        issues.append(ValidationIssue("$.indicators", "must contain at most 50 items"))
-    indicator_ids = set()
-    for index, raw in enumerate(indicators):
-        path = f"$.indicators[{index}]"
-        item = _expect_mapping(raw, path, issues)
-        _require_keys(
-            item,
-            (
-                "id",
-                "label",
-                "value",
-                "unit",
-                "displayValue",
-                "observedAt",
-                "retrievedAt",
-                "freshness",
-                "source",
-            ),
-            path,
-            issues,
+    if counted_sources != coverage["expectedSources"]:
+        issues.append(
+            ValidationIssue(
+                "$.pipeline.coverage",
+                "successful, stale, and failed source counts must equal expectedSources",
+            )
         )
-        item_id = item.get("id")
-        if not isinstance(item_id, str) or not item_id:
-            issues.append(ValidationIssue(f"{path}.id", "must be a non-empty string"))
-        elif item_id in indicator_ids:
-            issues.append(ValidationIssue(f"{path}.id", "must be unique"))
-        else:
-            indicator_ids.add(item_id)
-        if item.get("freshness") not in ALLOWED_FRESHNESS:
-            issues.append(ValidationIssue(f"{path}.freshness", "has an unsupported state"))
-        observed = _parse_timestamp(item.get("observedAt"), f"{path}.observedAt", issues)
-        retrieved = _parse_timestamp(item.get("retrievedAt"), f"{path}.retrievedAt", issues)
+    if coverage["expectedSources"] != len(root["sources"]):
+        issues.append(
+            ValidationIssue("$.pipeline.coverage.expectedSources", "must equal sources length")
+        )
+
+    actual_status_counts = {
+        "healthy": sum(source["status"] == "healthy" for source in root["sources"]),
+        "stale": sum(source["status"] == "stale" for source in root["sources"]),
+        "unavailable": sum(source["status"] == "unavailable" for source in root["sources"]),
+    }
+    expected_counts = {
+        "healthy": coverage["successfulSources"],
+        "stale": coverage["staleSources"],
+        "unavailable": coverage["failedSources"],
+    }
+    if actual_status_counts != expected_counts:
+        issues.append(ValidationIssue("$.pipeline.coverage", "does not match source health states"))
+
+    conditions = root["macroConditions"]
+    drivers = conditions["drivers"]
+    weight_sum = sum(float(driver["weight"]) for driver in drivers)
+    if abs(weight_sum - 1.0) > 0.001:
+        issues.append(ValidationIssue("$.macroConditions.drivers", "weights must sum to one"))
+    contribution_sum = sum(float(driver["contributionPoints"]) for driver in drivers)
+    expected_score = max(
+        0.0,
+        min(100.0, float(conditions["methodology"]["baselineScore"]) + contribution_sum),
+    )
+    if abs(float(conditions["score"]) - expected_score) > 0.11:
+        issues.append(
+            ValidationIssue(
+                "$.macroConditions.score", "must equal baseline plus driver contributions"
+            )
+        )
+    score = float(conditions["score"])
+    expected_label = "supportive" if score < 40 else "balanced" if score < 60 else "restrictive"
+    if conditions["label"] != expected_label:
+        issues.append(ValidationIssue("$.macroConditions.label", "does not match score band"))
+
+    indicator_ids = [indicator["id"] for indicator in root["indicators"]]
+    if len(indicator_ids) != len(set(indicator_ids)):
+        issues.append(ValidationIssue("$.indicators", "indicator IDs must be unique"))
+    indicator_id_set = set(indicator_ids)
+    for index, driver in enumerate(drivers):
+        if driver["indicatorId"] not in indicator_id_set:
+            issues.append(
+                ValidationIssue(
+                    "$.macroConditions.drivers[{}].indicatorId".format(index),
+                    "must reference a published indicator",
+                )
+            )
+    for index, indicator in enumerate(root["indicators"]):
+        observed = _timestamp(
+            indicator["observedAt"], "$.indicators[{}].observedAt".format(index), issues
+        )
+        retrieved = _timestamp(
+            indicator["retrievedAt"], "$.indicators[{}].retrievedAt".format(index), issues
+        )
         if observed and retrieved and observed > retrieved + timedelta(minutes=5):
-            issues.append(ValidationIssue(f"{path}.observedAt", "must not be after retrieval"))
-        _validate_source(item.get("source"), f"{path}.source", issues)
+            issues.append(
+                ValidationIssue(
+                    "$.indicators[{}].observedAt".format(index),
+                    "must not be after retrieval",
+                )
+            )
 
-    for section_name in ("priorityDevelopments", "stories"):
-        section = _expect_list(root.get(section_name), f"$.{section_name}", issues)
-        if len(section) > 100:
-            issues.append(ValidationIssue(f"$.{section_name}", "must contain at most 100 items"))
-        for index, raw in enumerate(section):
-            item = _expect_mapping(raw, f"$.{section_name}[{index}]", issues)
-            if "url" in item:
-                _validate_https(item["url"], f"$.{section_name}[{index}].url", issues)
+    story_ids = [story["id"] for story in root["stories"]]
+    if len(story_ids) != len(set(story_ids)):
+        issues.append(ValidationIssue("$.stories", "story IDs must be unique"))
+    unknown_digest_ids = set(root["digest"]["storyIds"]) - set(story_ids)
+    if unknown_digest_ids:
+        issues.append(ValidationIssue("$.digest.storyIds", "must reference published stories"))
 
-    calendar = _expect_list(root.get("calendar"), "$.calendar", issues)
-    for index, raw in enumerate(calendar):
-        item = _expect_mapping(raw, f"$.calendar[{index}]", issues)
-        if "scheduledAt" in item:
-            _parse_timestamp(item["scheduledAt"], f"$.calendar[{index}].scheduledAt", issues)
-        if "sourceUrl" in item:
-            _validate_https(item["sourceUrl"], f"$.calendar[{index}].sourceUrl", issues)
-
-    sources = _expect_list(root.get("sources"), "$.sources", issues)
-    for index, raw in enumerate(sources):
-        item = _expect_mapping(raw, f"$.sources[{index}]", issues)
-        if "url" in item:
-            _validate_https(item["url"], f"$.sources[{index}].url", issues)
+    source_ids = [source["id"] for source in root["sources"]]
+    if len(source_ids) != len(set(source_ids)):
+        issues.append(ValidationIssue("$.sources", "source IDs must be unique"))
 
     _walk_json(root, "$", issues)
     if issues:
         raise ContractValidationError(issues)
-    return dict(root)
-
+    return root
 
 def validate_manifest(manifest: Any) -> Dict[str, Any]:
+    _schema_gate(manifest, "manifest.v1.schema.json")
+    root = dict(manifest)
     issues: List[ValidationIssue] = []
-    root = _expect_mapping(manifest, "$", issues)
-    _require_keys(root, ("manifestVersion", "publishedAt", "snapshot"), "$", issues)
-    if root.get("manifestVersion") != 1:
-        issues.append(ValidationIssue("$.manifestVersion", "unsupported manifest version"))
-    _parse_timestamp(root.get("publishedAt"), "$.publishedAt", issues)
+    published_at = _timestamp(root["publishedAt"], "$.publishedAt", issues)
+    pointer = root["snapshot"]
+    generated_at = _timestamp(pointer["generatedAt"], "$.snapshot.generatedAt", issues)
+    valid_until = _timestamp(pointer["validUntil"], "$.snapshot.validUntil", issues)
+    if generated_at and valid_until and valid_until <= generated_at:
+        issues.append(ValidationIssue("$.snapshot.validUntil", "must be after generatedAt"))
+    if generated_at and published_at and published_at < generated_at:
+        issues.append(ValidationIssue("$.publishedAt", "must not precede snapshot generation"))
 
-    snapshot = _expect_mapping(root.get("snapshot"), "$.snapshot", issues)
-    _require_keys(
-        snapshot,
-        ("schemaVersion", "id", "path", "generatedAt", "validUntil", "sizeBytes", "sha256"),
-        "$.snapshot",
-        issues,
-    )
-    if snapshot.get("schemaVersion") != 1:
-        issues.append(ValidationIssue("$.snapshot.schemaVersion", "unsupported schema version"))
-    path = snapshot.get("path")
-    if not isinstance(path, str) or not SNAPSHOT_PATH_PATTERN.fullmatch(path):
-        issues.append(ValidationIssue("$.snapshot.path", "must be a safe immutable v1 snapshot path"))
-    digest = snapshot.get("sha256")
-    if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
-        issues.append(ValidationIssue("$.snapshot.sha256", "must be a lowercase SHA-256 digest"))
-    size = snapshot.get("sizeBytes")
-    if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 524_288:
-        issues.append(ValidationIssue("$.snapshot.sizeBytes", "must be between 1 and 524,288"))
-    _parse_timestamp(snapshot.get("generatedAt"), "$.snapshot.generatedAt", issues)
-    _parse_timestamp(snapshot.get("validUntil"), "$.snapshot.validUntil", issues)
+    match = SNAPSHOT_PATH_PATTERN.fullmatch(pointer["path"])
+    if match is None:
+        issues.append(ValidationIssue("$.snapshot.path", "must be an immutable snapshot path"))
+    else:
+        if match.group("sha256") != pointer["sha256"]:
+            issues.append(ValidationIssue("$.snapshot.path", "digest must match snapshot.sha256"))
+        if generated_at:
+            expected_directory = generated_at.strftime("%Y/%m/%d")
+            actual_directory = "{}/{}/{}".format(
+                match.group("year"), match.group("month"), match.group("day")
+            )
+            if actual_directory != expected_directory:
+                issues.append(ValidationIssue("$.snapshot.path", "date must match generatedAt"))
+            expected_timestamp = generated_at.strftime("%Y-%m-%dT%H-%M-%SZ")
+            if match.group("timestamp") != expected_timestamp:
+                issues.append(
+                    ValidationIssue("$.snapshot.path", "timestamp must match generatedAt")
+                )
+
     _walk_json(root, "$", issues)
     if issues:
         raise ContractValidationError(issues)
-    return dict(root)
+    return root

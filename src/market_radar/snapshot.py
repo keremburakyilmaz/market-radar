@@ -1,8 +1,8 @@
-"""Assemble a validated, public-safe Market Radar snapshot."""
+"""Assemble the strict v1 public snapshot and its next private checkpoint."""
 
 from __future__ import annotations
 
-import hashlib
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -13,10 +13,11 @@ from market_radar.domain import (
     CollectedIndicator,
     CollectedRelease,
     CollectionBundle,
+    SourceDescriptor,
 )
-from market_radar.scoring import latest_indicators, score_macro_conditions
+from market_radar.scoring import MacroConditions, latest_indicators, score_macro_conditions
 from market_radar.state import RadarState
-from market_radar.timeutil import format_utc
+from market_radar.timeutil import format_utc, parse_utc
 from market_radar.validation import validate_snapshot
 
 
@@ -24,6 +25,14 @@ CORE_INDICATOR_IDS = ("us-treasury-10y", "us-curve-2s10s", "fed-broad-usd")
 MAX_DEVELOPMENTS = 8
 MAX_STORIES = 12
 MAX_CALENDAR_EVENTS = 20
+_FRESHNESS_SECONDS = {
+    "us-treasury-2y": 604_800,
+    "us-treasury-10y": 604_800,
+    "us-curve-2s10s": 604_800,
+    "fed-broad-usd": 1_209_600,
+    "cbrt-usd-try": 604_800,
+}
+_FALLBACK_RETENTION_SECONDS = 2_592_000
 
 
 @dataclass(frozen=True)
@@ -36,13 +45,30 @@ def _snapshot_id(generated_at: datetime) -> str:
     return "mr-{}".format(generated_at.astimezone(timezone.utc).strftime("%Y%m%dt%H%M%Sz").lower())
 
 
-def _stable_id(prefix: str, value: str) -> str:
-    return "{}-{}".format(prefix, hashlib.sha256(value.encode("utf-8")).hexdigest()[:16])
+def _slug(value: str, fallback: str = "macro") -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:48]
+    if len(normalized) < 2:
+        return fallback
+    return normalized
 
 
-def _derive_curve(
-    current: Mapping[str, CollectedIndicator],
-) -> Optional[CollectedIndicator]:
+def _source_type(source: SourceDescriptor) -> str:
+    if source.source_id.startswith("gdelt-"):
+        return "public-data"
+    return "official"
+
+
+def _provenance(source: SourceDescriptor, retrieved_at: datetime) -> dict:
+    return {
+        "sourceId": source.source_id,
+        "sourceName": source.name[:80],
+        "sourceType": _source_type(source),
+        "sourceUrl": source.url,
+        "retrievedAt": format_utc(retrieved_at),
+    }
+
+
+def _derive_curve(current: Mapping[str, CollectedIndicator]) -> Optional[CollectedIndicator]:
     if "us-curve-2s10s" in current:
         return None
     two_year = current.get("us-treasury-2y")
@@ -63,8 +89,72 @@ def _derive_curve(
         retrieved_at=retrieved_at,
         freshness=freshness,
         source=ten_year.source,
-        market_tags=("global",),
+        market_tags=("global", "united-states", "rates"),
     )
+
+
+def _indicator_from_record(
+    indicator_id: str,
+    record: Mapping[str, object],
+    generated_at: datetime,
+) -> Optional[CollectedIndicator]:
+    try:
+        observed_at = parse_utc(str(record["observedAt"]))
+        retrieved_at = parse_utc(str(record["retrievedAt"]))
+        if (generated_at - observed_at).total_seconds() > _FALLBACK_RETENTION_SECONDS:
+            return None
+        raw_source = record["source"]
+        if not isinstance(raw_source, Mapping):
+            return None
+        source = SourceDescriptor(
+            source_id=str(raw_source["id"]),
+            name=str(raw_source["name"]),
+            url=str(raw_source["url"]),
+            license_class=str(raw_source["licenseClass"]),
+        )
+        raw_tags = record.get("marketTags", ["global"])
+        if not isinstance(raw_tags, list):
+            return None
+        return CollectedIndicator(
+            indicator_id=indicator_id,
+            label=str(record["label"]),
+            value=Decimal(str(record["value"])),
+            unit=str(record["unit"]),
+            display_value=str(record["displayValue"]),
+            observed_at=observed_at,
+            retrieved_at=retrieved_at,
+            freshness="stale",
+            source=source,
+            market_tags=tuple(str(tag) for tag in raw_tags),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _indicator_record(indicator: CollectedIndicator) -> dict:
+    return {
+        "label": indicator.label,
+        "value": float(indicator.value),
+        "unit": indicator.unit,
+        "displayValue": indicator.display_value,
+        "observedAt": format_utc(indicator.observed_at),
+        "retrievedAt": format_utc(indicator.retrieved_at),
+        "source": indicator.source.public_dict(),
+        "marketTags": list(indicator.market_tags),
+    }
+
+
+def _restore_last_good_indicators(
+    current: Dict[str, CollectedIndicator],
+    previous_state: RadarState,
+    generated_at: datetime,
+) -> None:
+    for indicator_id, record in previous_state.indicator_records.items():
+        if indicator_id in current:
+            continue
+        restored = _indicator_from_record(indicator_id, record, generated_at)
+        if restored is not None:
+            current[indicator_id] = restored
 
 
 def _indicator_change(
@@ -75,42 +165,94 @@ def _indicator_change(
         return None
     value = float(indicator.value)
     delta = value - previous
-    delta_percent = None if previous == 0 else delta / abs(previous) * 100.0
     if abs(delta) < 1e-12:
-        direction = "unchanged"
+        direction = "flat"
     elif delta > 0:
         direction = "up"
     else:
         direction = "down"
+
+    if indicator.indicator_id in {"us-treasury-2y", "us-treasury-10y"}:
+        display = "{:+.0f} bp".format(delta * 100)
+    elif indicator.indicator_id == "us-curve-2s10s":
+        display = "{:+.0f} bp".format(delta)
+    elif indicator.indicator_id == "cbrt-usd-try":
+        display = "{:+.4f}".format(delta)
+    else:
+        display = "{:+.2f}".format(delta)
     return {
-        "previousValue": previous,
-        "delta": round(delta, 6),
-        "deltaPercent": None if delta_percent is None else round(delta_percent, 4),
+        "rawValue": round(delta, 6),
+        "displayValue": display,
+        "period": "previous-observation",
         "direction": direction,
     }
 
 
+def _public_unit(indicator: CollectedIndicator) -> str:
+    if indicator.indicator_id == "cbrt-usd-try":
+        return "currency-rate"
+    if indicator.unit in {"basis_points", "basis-points"}:
+        return "basis-points"
+    if indicator.unit.startswith("index"):
+        return "index"
+    return indicator.unit
+
+
+def _macro_signal(indicator: CollectedIndicator, conditions: Mapping[str, object]) -> str:
+    drivers = conditions.get("drivers", [])
+    if isinstance(drivers, list):
+        for driver in drivers:
+            if isinstance(driver, dict) and driver.get("indicatorId") == indicator.indicator_id:
+                direction = driver.get("direction")
+                if direction == "restrictive":
+                    return "tightening"
+                if direction == "supportive":
+                    return "easing"
+                return "neutral"
+    if indicator.indicator_id == "us-treasury-2y":
+        if indicator.value >= Decimal("4"):
+            return "tightening"
+        if indicator.value <= Decimal("2.5"):
+            return "easing"
+        return "neutral"
+    if indicator.indicator_id == "cbrt-usd-try":
+        return "mixed"
+    return "neutral"
+
+
 def _indicator_dict(
-    indicator: CollectedIndicator, previous_values: Mapping[str, float]
+    indicator: CollectedIndicator,
+    previous_values: Mapping[str, float],
+    generated_at: datetime,
+    conditions: Mapping[str, object],
 ) -> dict:
+    age_seconds = max(0, int((generated_at - indicator.observed_at).total_seconds()))
+    age_seconds = min(age_seconds, _FALLBACK_RETENTION_SECONDS)
+    max_age = _FRESHNESS_SECONDS.get(indicator.indicator_id, 604_800)
+    freshness = "fresh" if indicator.freshness == "fresh" and age_seconds <= max_age else "stale"
     return {
         "id": indicator.indicator_id,
-        "label": indicator.label,
-        "value": float(indicator.value),
-        "unit": indicator.unit,
-        "displayValue": indicator.display_value,
+        "label": indicator.label[:80],
+        "rawValue": float(indicator.value),
+        "displayValue": indicator.display_value[:32],
+        "unit": _public_unit(indicator),
+        "change": _indicator_change(indicator, previous_values),
         "observedAt": format_utc(indicator.observed_at),
         "retrievedAt": format_utc(indicator.retrieved_at),
-        "freshness": indicator.freshness,
-        "change": _indicator_change(indicator, previous_values),
-        "source": indicator.source.public_dict(),
-        "marketTags": list(indicator.market_tags),
+        "freshness": {
+            "status": freshness,
+            "ageSeconds": age_seconds,
+            "maxAgeSeconds": max_age,
+        },
+        "macroSignal": _macro_signal(indicator, conditions),
+        "source": _provenance(indicator.source, indicator.retrieved_at),
+        "marketTags": list(dict.fromkeys(indicator.market_tags)),
     }
 
 
 def _category_for(release: CollectedRelease) -> str:
     if release.category and release.category != "macro":
-        return release.category
+        return _slug(release.category)
     title = release.title.lower()
     keyword_categories = (
         (("inflation", "consumer price", "cpi", "pce"), "inflation"),
@@ -129,7 +271,9 @@ def _why_it_matters(category: str, market_tags: Sequence[str]) -> str:
     if category == "inflation":
         return "Inflation composition can change the expected path of policy rates and real yields."
     if category == "labor":
-        return "Labor-market momentum affects the balance between inflation risk and growth support."
+        return (
+            "Labor-market momentum affects the balance between inflation risk and growth support."
+        )
     if category == "central-bank":
         if "turkey" in market_tags:
             return "CBRT guidance affects domestic rate expectations and the lira risk premium."
@@ -138,7 +282,7 @@ def _why_it_matters(category: str, market_tags: Sequence[str]) -> str:
         return "Energy supply changes can move headline inflation and growth expectations together."
     if category == "growth":
         return "Growth momentum changes the policy trade-off and demand outlook."
-    return "This development may alter the macro inputs that currently drive the radar."
+    return "This development may alter the official macro inputs that currently drive the radar."
 
 
 def _impact(category: str, kind: str) -> str:
@@ -147,35 +291,97 @@ def _impact(category: str, kind: str) -> str:
     return "medium"
 
 
-def _release_dict(release: CollectedRelease) -> dict:
+def _development_dict(release: CollectedRelease) -> dict:
     category = _category_for(release)
     return {
-        "id": release.release_id or _stable_id("release", release.url),
-        "headline": release.title,
-        "publishedAt": format_utc(release.published_at),
-        "retrievedAt": format_utc(release.retrieved_at),
-        "kind": release.kind,
-        "category": category,
+        "id": release.release_id,
+        "headline": release.title[:240],
+        "summary": _why_it_matters(category, release.market_tags),
         "impact": _impact(category, release.kind),
-        "whyItMatters": _why_it_matters(category, release.market_tags),
-        "url": release.url,
-        "source": release.source.public_dict(),
-        "marketTags": list(release.market_tags),
+        "firstSeenAt": format_utc(release.published_at),
+        "updatedAt": format_utc(release.retrieved_at),
+        "provenance": [_provenance(release.source, release.retrieved_at)],
+        "marketTags": list(dict.fromkeys(release.market_tags)),
     }
 
 
+def _story_dict(release: CollectedRelease) -> dict:
+    category = _category_for(release)
+    if release.kind == "discovery":
+        summary = (
+            "GDELT surfaced this title as discovery metadata; Market Radar has not independently "
+            "confirmed the underlying report."
+        )
+    else:
+        summary = (
+            "Official release metadata is retained with its source link; Market Radar does not copy "
+            "the full release text."
+        )
+    return {
+        "id": release.release_id,
+        "headline": release.title[:240],
+        "summary": summary,
+        "whyItMatters": _why_it_matters(category, release.market_tags),
+        "url": release.url,
+        "publisher": (release.publisher or release.source.name)[:80],
+        "publishedAt": format_utc(release.published_at),
+        "retrievedAt": format_utc(release.retrieved_at),
+        "impact": _impact(category, release.kind),
+        "category": category,
+        "provenance": [_provenance(release.source, release.retrieved_at)],
+        "marketTags": list(dict.fromkeys(release.market_tags)),
+    }
+
+
+def _calendar_category(name: str) -> str:
+    lowered = name.lower()
+    if "consumer price" in lowered or "inflation" in lowered:
+        return "inflation"
+    if "employment" in lowered or "jobs" in lowered:
+        return "labor"
+    if "gross domestic" in lowered or "personal income" in lowered:
+        return "growth"
+    return "macro"
+
+
+def _calendar_timezone(region: str) -> str:
+    if region == "US":
+        return "America/New_York"
+    if region in {"TR", "Turkey", "Türkiye"}:
+        return "Europe/Istanbul"
+    return "Europe/Brussels"
+
+
+def _country_code(region: str) -> str:
+    mapping = {"US": "US", "TR": "TR", "Turkey": "TR", "Türkiye": "TR", "EU": "EU"}
+    return mapping.get(region, "EU")
+
+
 def _calendar_dict(event: CollectedCalendarEvent) -> dict:
+    category = _calendar_category(event.name)
+    tags = list(dict.fromkeys((*event.market_tags, category)))
+    source = SourceDescriptor(
+        source_id=_slug(event.authority, "official-calendar"),
+        name=event.authority,
+        url=event.source_url,
+        license_class="official-calendar",
+    )
+    provenance = _provenance(source, event.checked_at)
+    provenance["sourceType"] = "official"
     return {
         "id": event.event_id,
-        "name": event.name,
+        "title": event.name[:240],
+        "countryCode": _country_code(event.region),
         "scheduledAt": format_utc(event.scheduled_at),
-        "authority": event.authority,
-        "region": event.region,
+        "timezone": _calendar_timezone(event.region),
+        "status": "scheduled",
         "impact": event.impact,
-        "tentative": event.tentative,
-        "sourceUrl": event.source_url,
-        "checkedAt": format_utc(event.checked_at),
-        "marketTags": list(event.market_tags),
+        "previous": None,
+        "forecast": None,
+        "actual": None,
+        "unit": None,
+        "marketTags": tags,
+        "source": provenance,
     }
 
 
@@ -188,13 +394,102 @@ def _dedupe_releases(releases: Iterable[CollectedRelease]) -> List[CollectedRele
     return sorted(by_url.values(), key=lambda item: item.published_at, reverse=True)
 
 
-def _source_status(status: str) -> str:
+def _source_health_status(status: str) -> str:
     normalized = status.lower()
     if normalized in {"ok", "healthy", "fresh"}:
-        return "fresh"
+        return "healthy"
     if normalized in {"degraded", "stale"}:
-        return "degraded"
+        return "stale"
     return "unavailable"
+
+
+def _source_market_tags(source_id: str) -> list:
+    if "cbrt" in source_id or "turkey" in source_id:
+        return ["turkey"]
+    if "treasury" in source_id or "fred" in source_id or "fed-" in source_id:
+        return ["global", "united-states"]
+    if "ecb" in source_id:
+        return ["global", "euro-area"]
+    return ["global"]
+
+
+def _source_payload(bundle: CollectionBundle) -> list:
+    output = []
+    for health in sorted(bundle.source_health, key=lambda item: item.source.source_id):
+        status = _source_health_status(health.status)
+        if status == "healthy":
+            message = "Latest scheduled retrieval succeeded."
+        elif status == "stale":
+            message = "Source returned partial or stale data; observation times remain explicit."
+        else:
+            message = "Source was unavailable in this run; internal error details are not public."
+        output.append(
+            {
+                "id": health.source.source_id,
+                "name": health.source.name[:80],
+                "type": _source_type(health.source),
+                "url": health.source.url,
+                "status": status,
+                "lastAttemptAt": format_utc(health.retrieved_at),
+                "lastSuccessAt": format_utc(health.retrieved_at) if health.item_count else None,
+                "itemsUsed": health.item_count,
+                "marketTags": _source_market_tags(health.source.source_id),
+                "publicMessage": message,
+            }
+        )
+    return output
+
+
+def _all_market_tags(
+    current: Mapping[str, CollectedIndicator],
+    releases: Sequence[CollectedRelease],
+    calendar: Sequence[CollectedCalendarEvent],
+) -> list:
+    tags = ["global"]
+    for item in current.values():
+        tags.extend(item.market_tags)
+    for item in releases:
+        tags.extend(item.market_tags)
+    for item in calendar:
+        tags.extend(item.market_tags)
+    return list(dict.fromkeys(_slug(tag) for tag in tags))[:12]
+
+
+def _digest_dict(
+    conditions: MacroConditions,
+    conditions_payload: Mapping[str, object],
+    stories: Sequence[dict],
+    generated_at: datetime,
+    market_tags: Sequence[str],
+) -> dict:
+    drivers = conditions_payload["drivers"]
+    assert isinstance(drivers, list)
+    highlights = []
+    for index, driver in enumerate(
+        sorted(drivers, key=lambda item: abs(float(item["contributionPoints"])), reverse=True)[:3]
+    ):
+        contribution = float(driver["contributionPoints"])
+        highlights.append(
+            {
+                "id": "highlight-{}-{}".format(index + 1, _slug(str(driver["indicatorId"]))),
+                "text": str(driver["explanation"]),
+                "impact": "high" if abs(contribution) >= 10 else "medium",
+                "relatedStoryIds": [],
+            }
+        )
+    public_label = str(conditions_payload["label"])
+    return {
+        "id": "digest-{}".format(generated_at.strftime("%Y%m%dt%H%M%Sz").lower()),
+        "periodStart": format_utc(generated_at - timedelta(hours=24)),
+        "periodEnd": format_utc(generated_at),
+        "generatedAt": format_utc(generated_at),
+        "title": "Macro conditions are {}".format(public_label),
+        "summary": conditions.summary,
+        "highlights": highlights,
+        "storyIds": [story["id"] for story in stories],
+        "itemCount": len(stories),
+        "marketTags": list(market_tags),
+    }
 
 
 def build_snapshot(
@@ -202,18 +497,21 @@ def build_snapshot(
     previous_state: RadarState,
     *,
     generated_at: datetime,
+    started_at: Optional[datetime] = None,
     valid_for: timedelta = timedelta(hours=8, minutes=30),
     successful_slot: Optional[str] = None,
 ) -> SnapshotBuildResult:
     if generated_at.tzinfo is None:
         raise ValueError("generated_at must be timezone-aware")
     generated_at = generated_at.astimezone(timezone.utc).replace(microsecond=0)
+    started_at = (started_at or generated_at).astimezone(timezone.utc).replace(microsecond=0)
+    if started_at > generated_at:
+        raise ValueError("started_at must not be after generated_at")
 
     current = latest_indicators(bundle.indicators)
+    _restore_last_good_indicators(current, previous_state, generated_at)
     derived_curve = _derive_curve(current)
-    all_indicators = list(bundle.indicators)
     if derived_curve is not None:
-        all_indicators.append(derived_curve)
         current[derived_curve.indicator_id] = derived_curve
 
     histories = dict(bundle.histories)
@@ -223,23 +521,20 @@ def build_snapshot(
             existing.append(indicator)
         histories[indicator_id] = tuple(existing)
 
-    available_core = sum(
-        1
-        for indicator_id in CORE_INDICATOR_IDS
-        if indicator_id in current and current[indicator_id].freshness != "unavailable"
-    )
+    available_core = sum(1 for indicator_id in CORE_INDICATOR_IDS if indicator_id in current)
     if available_core < 2:
         raise ValueError("publication requires at least two core macro indicators")
 
     conditions = score_macro_conditions(current, histories)
+    conditions_payload = conditions.public_dict()
     releases = _dedupe_releases(bundle.releases)
     new_releases = [
         release for release in releases if release.url not in previous_state.seen_release_urls
     ]
-    priority = [release for release in new_releases if release.kind == "official"][
+    priority_releases = [release for release in new_releases if release.kind == "official"][
         :MAX_DEVELOPMENTS
     ]
-    stories = new_releases[:MAX_STORIES]
+    story_releases = new_releases[:MAX_STORIES]
 
     calendar_end = generated_at + timedelta(days=21)
     upcoming_events = sorted(
@@ -251,32 +546,18 @@ def build_snapshot(
         key=lambda item: item.scheduled_at,
     )[:MAX_CALENDAR_EVENTS]
 
-    degraded_sources = sum(
-        1 for health in bundle.source_health if _source_status(health.status) != "fresh"
-    )
+    source_payload = _source_payload(bundle)
+    successful_sources = sum(1 for source in source_payload if source["status"] == "healthy")
+    stale_sources = sum(1 for source in source_payload if source["status"] == "stale")
+    failed_sources = sum(1 for source in source_payload if source["status"] == "unavailable")
     pipeline_status = (
-        "healthy" if available_core == len(CORE_INDICATOR_IDS) and degraded_sources == 0 else "degraded"
+        "healthy"
+        if available_core == len(CORE_INDICATOR_IDS) and stale_sources == 0 and failed_sources == 0
+        else "degraded"
     )
+    market_tags = _all_market_tags(current, releases, upcoming_events)
     snapshot_id = _snapshot_id(generated_at)
-
-    indicator_payload = [
-        _indicator_dict(indicator, previous_state.indicator_values)
-        for indicator in sorted(current.values(), key=lambda item: item.indicator_id)
-    ]
-    source_payload = [
-        {
-            **health.source.public_dict(),
-            "status": _source_status(health.status),
-            "retrievedAt": format_utc(health.retrieved_at),
-            "itemCount": health.item_count,
-            "errorCode": health.error_code,
-        }
-        for health in sorted(bundle.source_health, key=lambda item: item.source.source_id)
-    ]
-
-    watch = [driver.label for driver in sorted(conditions.drivers, key=lambda item: item.score, reverse=True)[:2]]
-    if upcoming_events:
-        watch.append(upcoming_events[0].name)
+    story_payload = [_story_dict(release) for release in story_releases]
 
     snapshot = {
         "schemaVersion": 1,
@@ -284,29 +565,43 @@ def build_snapshot(
         "generatedAt": format_utc(generated_at),
         "validUntil": format_utc(generated_at + valid_for),
         "pipeline": {
+            "runId": "run-{}".format(generated_at.strftime("%Y%m%dt%H%M%Sz").lower()),
             "status": pipeline_status,
-            "summary": (
-                "All required sources are current."
-                if pipeline_status == "healthy"
-                else "The last valid data is retained where a source is delayed or unavailable."
-            ),
+            "startedAt": format_utc(started_at),
+            "completedAt": format_utc(generated_at),
             "coverage": {
-                "coreAvailable": available_core,
-                "coreRequired": 2,
-                "coreTotal": len(CORE_INDICATOR_IDS),
-                "sourcesAvailable": len(bundle.source_health) - degraded_sources,
-                "sourcesTotal": len(bundle.source_health),
+                "expectedSources": len(source_payload),
+                "successfulSources": successful_sources,
+                "staleSources": stale_sources,
+                "failedSources": failed_sources,
+                "marketTags": market_tags,
             },
+            **(
+                {
+                    "publicNote": (
+                        "One or more sources are delayed or unavailable; observation and retrieval "
+                        "timestamps remain explicit."
+                    )
+                }
+                if pipeline_status == "degraded"
+                else {}
+            ),
         },
-        "macroConditions": conditions.public_dict(),
-        "indicators": indicator_payload,
-        "priorityDevelopments": [_release_dict(release) for release in priority],
-        "stories": [_release_dict(release) for release in stories],
+        "macroConditions": conditions_payload,
+        "indicators": [
+            _indicator_dict(
+                indicator, previous_state.indicator_values, generated_at, conditions_payload
+            )
+            for indicator in sorted(current.values(), key=lambda item: item.indicator_id)
+        ],
+        "priorityDevelopments": [
+            _development_dict(release) for release in priority_releases
+        ],
+        "stories": story_payload,
         "calendar": [_calendar_dict(event) for event in upcoming_events],
-        "digest": {
-            "summary": conditions.summary,
-            "watch": watch,
-        },
+        "digest": _digest_dict(
+            conditions, conditions_payload, story_payload, generated_at, market_tags
+        ),
         "sources": source_payload,
     }
 
@@ -321,6 +616,10 @@ def build_snapshot(
         previous_snapshot_id=snapshot_id,
         indicator_values={
             indicator_id: float(indicator.value) for indicator_id, indicator in current.items()
+        },
+        indicator_records={
+            indicator_id: _indicator_record(indicator)
+            for indicator_id, indicator in current.items()
         },
         seen_release_urls=next_urls,
         successful_slots=next_slots,

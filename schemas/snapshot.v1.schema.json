@@ -502,7 +502,7 @@
         "maxAgeSeconds": {
           "type": "integer",
           "minimum": 60,
-          "maximum": 604800
+          "maximum": 1209600
         }
       }
     },
@@ -703,7 +703,7 @@
           "$ref": "#/$defs/nullableDisplayText"
         },
         "unit": {
-          "$ref": "#/$defs/safeShortText"
+          "$ref": "#/$defs/nullableDisplayText"
         },
         "referencePeriod": {
           "$ref": "#/$defs/safeShortText"
