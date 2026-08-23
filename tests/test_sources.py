@@ -167,6 +167,25 @@ class ReleaseSourceTests(unittest.TestCase):
         self.assertEqual(release.published_at, datetime(2026, 8, 20, 8, tzinfo=UTC))
         self.assertTrue(release.url.startswith("https://www.tcmb.gov.tr/"))
 
+    def test_cbrt_current_atom_upgrades_official_links_and_uses_turkey_time(self):
+        result = cbrt_press_adapter(FixtureClient("cbrt_atom_current.xml")).fetch(RETRIEVED)
+
+        self.assert_result_ok(result)
+        release = result.items[0]
+        self.assertEqual(
+            release.title,
+            "Press Release on Turkish Lira Liquidity Management (2026-35)",
+        )
+        self.assertEqual(
+            release.url,
+            "https://www.tcmb.gov.tr/wps/wcm/connect/en/tcmb+en/main+menu/"
+            "announcements/press+releases/2026/ano2026-35",
+        )
+        self.assertEqual(
+            release.published_at,
+            datetime(2026, 8, 23, 16, 30, tzinfo=UTC),
+        )
+
     def test_gdelt_keeps_discovery_metadata_only_and_deduplicates(self):
         adapter = GdeltDocAdapter(FixtureClient("gdelt_doc.json"), "central bank OR inflation")
         result = adapter.fetch(RETRIEVED)

@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo
 
 from .base import (
     UTC,
@@ -36,11 +37,13 @@ class FeedAdapter:
         source_url: str,
         publisher: str,
         category: str | None = None,
+        source_timezone: str = "UTC",
     ) -> None:
         self.client = client
         self.source_url = source_url
         self.publisher = publisher
         self.category = category
+        self.source_timezone = source_timezone
 
     def fetch(self, retrieved_at: datetime | None = None) -> SourceResult[Release]:
         retrieved = normalize_retrieved_at(retrieved_at)
@@ -70,7 +73,10 @@ class FeedAdapter:
                 partial = True
                 continue
             try:
-                published_at = _parse_feed_datetime(published_text)
+                published_at = _parse_feed_datetime(
+                    published_text,
+                    default_timezone=self.source_timezone,
+                )
             except ValueError:
                 partial = True
                 continue
@@ -118,7 +124,12 @@ def ecb_press_adapter(client: HttpClient) -> FeedAdapter:
 
 
 def cbrt_press_adapter(client: HttpClient) -> FeedAdapter:
-    return FeedAdapter(client, CBRT_PRESS_URL, "Central Bank of the Republic of Turkey")
+    return FeedAdapter(
+        client,
+        CBRT_PRESS_URL,
+        "Central Bank of the Republic of Turkey",
+        source_timezone="Europe/Istanbul",
+    )
 
 
 def _local(tag: str) -> str:
@@ -166,6 +177,15 @@ def _entry_category(entry: ET.Element) -> str | None:
 def _safe_absolute_url(value: str, base_url: str) -> str | None:
     absolute = urljoin(base_url, value.strip())
     parsed = urlparse(absolute)
+    base = urlparse(base_url)
+    if (
+        parsed.scheme == "http"
+        and parsed.hostname is not None
+        and parsed.hostname.lower() == (base.hostname or "").lower()
+        and parsed.username is None
+        and parsed.password is None
+    ):
+        parsed = parsed._replace(scheme="https")
     if (
         parsed.scheme != "https"
         or not parsed.netloc
@@ -176,12 +196,20 @@ def _safe_absolute_url(value: str, base_url: str) -> str | None:
     return parsed._replace(fragment="").geturl()
 
 
-def _parse_feed_datetime(value: str) -> datetime:
+def _parse_feed_datetime(value: str, *, default_timezone: str) -> datetime:
     text = value.strip()
-    try:
-        parsed = parsedate_to_datetime(text)
-    except (TypeError, ValueError):
-        parsed = None
+    parsed = None
+    for pattern in ("%b %d, %Y, %I:%M:%S %p",):
+        try:
+            parsed = datetime.strptime(text, pattern)
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        try:
+            parsed = parsedate_to_datetime(text)
+        except (TypeError, ValueError):
+            parsed = None
     if parsed is None:
         normalized = text.replace("Z", "+00:00")
         try:
@@ -189,7 +217,7 @@ def _parse_feed_datetime(value: str) -> datetime:
         except ValueError as error:
             raise ValueError("unsupported feed time") from error
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        parsed = parsed.replace(tzinfo=ZoneInfo(default_timezone))
     return parsed.astimezone(UTC)
 
 
