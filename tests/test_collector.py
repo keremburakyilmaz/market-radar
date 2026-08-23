@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from market_radar.collector import CollectionJob, collect_sources
+from market_radar.collector import CollectionJob, collect_sources, default_jobs
 from market_radar.domain import SourceDescriptor
 from market_radar.sources import (
     CalendarEvent,
@@ -40,6 +40,13 @@ def success(items):
 
 
 class CollectorTests(unittest.TestCase):
+    def test_default_jobs_do_not_automate_the_blocked_bls_calendar(self):
+        jobs = default_jobs(client=object(), fred_api_key=None)
+        job_ids = {job.job_id for job in jobs}
+
+        self.assertNotIn("bls-calendar", job_ids)
+        self.assertIn("bea-calendar", job_ids)
+
     def test_normalizes_and_filters_source_outputs(self):
         indicator_job = CollectionJob(
             "indicators",

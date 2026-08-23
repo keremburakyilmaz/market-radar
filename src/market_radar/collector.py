@@ -31,7 +31,7 @@ from market_radar.sources import (
     SourceStatus,
     UrllibHttpClient,
 )
-from market_radar.sources.calendar import bea_calendar_adapter, bls_calendar_adapter
+from market_radar.sources.calendar import bea_calendar_adapter
 from market_radar.sources.cbrt import CbrtUsdTryAdapter
 from market_radar.sources.feeds import cbrt_press_adapter, ecb_press_adapter, fed_press_adapter
 from market_radar.sources.fred import FredBroadUsdAdapter
@@ -73,7 +73,6 @@ def default_jobs(
     fed_feed = fed_press_adapter(client)
     ecb_feed = ecb_press_adapter(client)
     cbrt_feed = cbrt_press_adapter(client)
-    bls = bls_calendar_adapter(client)
     bea = bea_calendar_adapter(client)
     gdelt_global = GdeltDocAdapter(
         client,
@@ -152,18 +151,6 @@ def default_jobs(
                 "official-source-attribution-required",
             ),
             ("global", "turkey"),
-        ),
-        CollectionJob(
-            "bls-calendar",
-            "calendar",
-            bls,
-            _source(
-                "bls-calendar",
-                "U.S. Bureau of Labor Statistics",
-                bls.source_url,
-                "us-government-public-domain",
-            ),
-            calendar_keywords=("consumer price index", "employment situation"),
         ),
         CollectionJob(
             "bea-calendar",

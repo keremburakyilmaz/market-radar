@@ -48,7 +48,7 @@ its direct endpoint rather than through the catalog itself.
 | Federal Reserve via FRED | Broad U.S. dollar index (`DTWEXBGS`) | `FRED_API_KEY` |
 | CBRT | Official indicative USD/TRY buying rate | None |
 | Federal Reserve, ECB, and CBRT | Official release metadata | None |
-| BLS and BEA | Official economic calendars | None |
+| BEA | Official economic calendar | None |
 | GDELT | Discovery metadata only; no article bodies or images | None |
 
 ECONDB was on the original candidate list but is intentionally not a v1 core or
@@ -60,6 +60,11 @@ context after reuse terms are confirmed.
 A source failure degrades coverage instead of fabricating data. Eligible
 last-good official observations remain visibly stale, and public source health
 uses sanitized messages.
+
+The BLS calendar parser remains fixture-tested, but scheduled BLS retrieval is
+disabled. Its documented calendar endpoint currently returns an explicit
+automated-access denial to this client; the engine does not disguise itself as
+a browser or work around that control.
 
 ## Local setup on macOS
 
