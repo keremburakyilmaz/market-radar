@@ -84,13 +84,18 @@ before testing.
 
 ## GitHub environment
 
-Create the `market-radar-production` environment. Restrict deployments to the
-`main` branch. Do not require a human approval for scheduled refreshes, or every
-scheduled run will wait indefinitely. The manual operations scaffold uses the
-same environment and production concurrency group but has no storage
-credentials and cannot mutate R2.
+Create two environments, both restricted to the `main` branch:
 
-Environment variables:
+- `market-radar-production` is used by scheduled refreshes. Do not require a
+  human approval here, or every scheduled run will wait indefinitely.
+- `market-radar-operations` is used only by manual pause, resume, and rollback.
+  Require at least one reviewer and prevent self-review if the repository plan
+  supports it.
+
+Both workflows share the `market-radar-production` concurrency group, so an
+operation and a refresh cannot mutate pointers simultaneously.
+
+Configure these variables in both environments, or as repository variables:
 
 | Name | Value |
 | --- | --- |
@@ -99,7 +104,7 @@ Environment variables:
 | `R2_PUBLIC_BUCKET` | `market-radar-public` |
 | `R2_STATE_BUCKET` | `market-radar-state` |
 
-Environment secrets:
+Configure these secrets in `market-radar-production`:
 
 | Name | Scope |
 | --- | --- |
@@ -108,6 +113,10 @@ Environment secrets:
 | `R2_STATE_ACCESS_KEY_ID` | State-bucket token access-key ID |
 | `R2_STATE_SECRET_ACCESS_KEY` | State-bucket token secret |
 | `FRED_API_KEY` | FRED API key; never exposed in public output |
+
+Configure the four R2 secrets in `market-radar-operations` as well. The
+workflow exposes state-bucket credentials to pause/resume steps and adds the
+public-bucket credentials only to rollback. It never receives `FRED_API_KEY`.
 
 The weekly smoke workflow does not enter the production environment and never
 receives R2 credentials. If FRED coverage is desired there, add a separate
@@ -145,6 +154,12 @@ The run ID makes retries of the same Actions run slot-idempotent. A manual
 dispatch defaults `publish` to false and instead uses the local target. It
 collects and validates a real candidate but cannot reach R2.
 
+Before a publishing run collects any source, it reads
+`control/publication.json` from the private state bucket. A missing control
+object means enabled. A valid paused object produces a no-op report without
+collecting, publishing, or advancing state; a corrupt control object fails the
+run closed.
+
 ### Live-source smoke
 
 `.github/workflows/live-source-smoke.yml` runs every Monday at 06:43 UTC and on
@@ -152,18 +167,28 @@ manual dispatch. It performs a local dry run with live network sources, has no
 R2 credentials, and is deliberately nonblocking. Failures remain visible in
 the step result, warning annotation, summary, and seven-day diagnostic artifact.
 
-### Operations scaffold
+### Operations
 
-`.github/workflows/ops.yml` accepts `rollback`, `pause`, and `resume` requests
-only to validate their shape and reject them. It always exits unsuccessfully
-without credentials or writes. This is intentional: the current CLI has no
-validated operation that can safely rebuild a manifest, conditionally update
-its ETag, verify the selected snapshot, or persist publication-control state.
+`.github/workflows/ops.yml` runs only by manual dispatch from `main`, through
+the protected `market-radar-operations` environment.
 
-Do not replace the scaffold with raw `aws s3 cp`, Wrangler, or dashboard pointer
-edits. Implement and test application-level CLI commands first; then the
-workflow may call those commands with a separately protected operations
-environment.
+- `pause` conditionally writes a private, bounded control object. Scheduled
+  publication then stops before collection.
+- `resume` conditionally enables publication again and records the operator and
+  reason privately.
+- `rollback` first pauses publication, then reads an existing immutable public
+  snapshot, verifies its schema, canonical bytes, SHA-256 key, path timestamp,
+  and object metadata, and conditionally moves `v1/latest.json` to it. If any
+  verification or pointer write fails, publication remains paused.
+
+Rollback changes only the public pointer; it does not rewind the latest private
+analysis checkpoint. This is deliberate. The pause prevents a scheduled run
+from immediately superseding the rollback, and a later validated refresh
+continues from the newest durable engine state after an explicit resume.
+
+Do not perform operations with raw `aws s3 cp`, Wrangler, or dashboard pointer
+edits. Those paths bypass contract validation, conditional writes, and the
+private audit record.
 
 ## First publication
 
@@ -171,7 +196,8 @@ environment.
 2. Create both R2 buckets and the two bucket-scoped tokens.
 3. Activate the custom domain, disable `r2.dev`, and configure CORS, cache
    bypass, immutable snapshot caching, and bot/challenge exemptions.
-4. Create and populate the `market-radar-production` GitHub environment.
+4. Create and populate both GitHub environments. Protect
+   `market-radar-operations` with required review.
 5. Confirm CI is green on the exact `main` commit.
 6. Manually run **Refresh Market Radar** with `publish=false`. Download the
    diagnostic artifact and inspect the candidate, source coverage, freshness,
@@ -183,9 +209,23 @@ environment.
    referenced path, and verify its byte length and SHA-256 against the manifest.
 10. Confirm `market-radar-state/state/latest.json` references an existing private
     checkpoint and that no generated-data commit appeared in Git history.
+11. Dispatch **Market Radar Operations** with `pause`, confirm a publishing
+    refresh becomes a no-op, then dispatch `resume` before enabling the schedule.
 
 Only after those checks should the personal website switch from mock data to
 runtime fetching.
+
+## Rollback runbook
+
+1. Copy the exact prior immutable key from R2 or an older `v1/latest.json`.
+2. Dispatch **Market Radar Operations** with `rollback`, that key, and a concise
+   audit reason. Approve the protected environment request.
+3. Fetch public `v1/latest.json`; verify that it references the selected key and
+   that the referenced bytes match its size and SHA-256.
+4. Leave publication paused while repairing and validating the cause. Manual
+   refreshes with `publish=false` remain available for live diagnostics.
+5. Dispatch `resume`, then run one manual publishing refresh and verify the
+   public pointer, private checkpoint, source coverage, and workflow report.
 
 ## Known operational limitation
 

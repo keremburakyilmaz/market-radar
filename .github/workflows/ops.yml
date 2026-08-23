@@ -28,14 +28,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  fail-closed-scaffold:
-    name: Reject unsupported mutation
+  operate:
+    name: ${{ inputs.operation }} publication
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    environment: market-radar-production
+    timeout-minutes: 15
+    environment: market-radar-operations
     env:
       OPERATION: ${{ inputs.operation }}
       SNAPSHOT_KEY: ${{ inputs.snapshot_key }}
+      OPERATION_REASON: ${{ inputs.reason }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_PUBLIC_BUCKET: ${{ vars.R2_PUBLIC_BUCKET }}
+      R2_STATE_BUCKET: ${{ vars.R2_STATE_BUCKET }}
 
     steps:
       - name: Validate request shape
@@ -56,14 +61,67 @@ jobs:
             exit 1
           fi
 
-      - name: Refuse unsupported operation
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install operations runtime
+        run: python -m pip install ".[r2]"
+
+      - name: Pause publication
+        if: inputs.operation == 'pause'
+        env:
+          R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
+          R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+        run: >-
+          python -m market_radar ops pause
+          --target r2
+          --reason "${OPERATION_REASON}"
+          --actor "${GITHUB_ACTOR}"
+
+      - name: Resume publication
+        if: inputs.operation == 'resume'
+        env:
+          R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
+          R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+        run: >-
+          python -m market_radar ops resume
+          --target r2
+          --reason "${OPERATION_REASON}"
+          --actor "${GITHUB_ACTOR}"
+
+      - name: Pause and roll back public pointer
+        if: inputs.operation == 'rollback'
+        env:
+          R2_PUBLIC_ACCESS_KEY_ID: ${{ secrets.R2_PUBLIC_ACCESS_KEY_ID }}
+          R2_PUBLIC_SECRET_ACCESS_KEY: ${{ secrets.R2_PUBLIC_SECRET_ACCESS_KEY }}
+          R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
+          R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+        run: >-
+          python -m market_radar ops rollback
+          --target r2
+          --snapshot-key "${SNAPSHOT_KEY}"
+          --reason "${OPERATION_REASON}"
+          --actor "${GITHUB_ACTOR}"
+
+      - name: Summarize operation
+        if: success()
         run: |
           {
-            echo "## Operation refused"
+            echo "## Market Radar operation"
             echo
-            echo "The application has no validated rollback or publication-control command yet."
-            echo "No R2 credentials were exposed and no object was changed."
-            echo "See docs/deployment.md for the required implementation boundary."
+            echo "- Operation: ${OPERATION}"
+            echo "- Actor: ${GITHUB_ACTOR}"
+            if [[ "${OPERATION}" == "rollback" ]]; then
+              echo "- Promoted snapshot: ${SNAPSHOT_KEY}"
+              echo "- Publication remains paused until an explicit resume"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
-          echo "::error::Fail closed: rollback, pause, and resume are not implemented by the CLI."
-          exit 1

@@ -112,7 +112,8 @@ will fetch `v1/latest.json` at runtime; it does not need an API key and should
 never receive a Cloudflare browser challenge.
 
 See [`docs/deployment.md`](docs/deployment.md) for bucket policy, secrets, CORS,
-cache rules, bot-protection exemptions, first publication, and rollback limits.
+cache rules, bot-protection exemptions, first publication, and the protected
+pause/resume/rollback runbook.
 
 ## License
 
