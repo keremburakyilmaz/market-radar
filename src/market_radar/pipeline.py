@@ -93,6 +93,7 @@ class PipelineRunner:
             state,
             generated_at=completed_at,
             started_at=started_at,
+            run_id=run_id,
             successful_slot=slot if publish else None,
         )
         validate_snapshot(build.snapshot, now=completed_at, enforce_publish_time=publish)
@@ -220,4 +221,3 @@ def _atomic_write(path: Path, body: bytes) -> None:
 
 def _reject_constant(value: str) -> None:
     raise ValueError("non-finite JSON value is forbidden: {}".format(value))
-

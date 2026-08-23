@@ -112,3 +112,18 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(outcome.no_op)
         self.assertEqual(self.calls, 1)
 
+    def test_report_and_snapshot_share_the_started_run_identity(self):
+        times = iter((NOW, NOW + timedelta(minutes=1)))
+        runner = PipelineRunner(
+            collector=self.collect,
+            output_dir=self.root / "out",
+            local_state_path=self.root / "state" / "state.json",
+            clock=lambda: next(times),
+        )
+
+        outcome = runner.run(publish=False)
+        report = json.loads(outcome.report_path.read_text())
+
+        self.assertEqual(outcome.run_id, "run-20260823t120000z")
+        self.assertEqual(outcome.snapshot["pipeline"]["runId"], outcome.run_id)
+        self.assertEqual(report["runId"], outcome.run_id)

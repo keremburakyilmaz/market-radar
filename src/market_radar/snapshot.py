@@ -498,6 +498,7 @@ def build_snapshot(
     *,
     generated_at: datetime,
     started_at: Optional[datetime] = None,
+    run_id: Optional[str] = None,
     valid_for: timedelta = timedelta(hours=8, minutes=30),
     successful_slot: Optional[str] = None,
 ) -> SnapshotBuildResult:
@@ -507,6 +508,9 @@ def build_snapshot(
     started_at = (started_at or generated_at).astimezone(timezone.utc).replace(microsecond=0)
     if started_at > generated_at:
         raise ValueError("started_at must not be after generated_at")
+    run_id = run_id or "run-{}".format(
+        generated_at.strftime("%Y%m%dt%H%M%Sz").lower()
+    )
 
     current = latest_indicators(bundle.indicators)
     _restore_last_good_indicators(current, previous_state, generated_at)
@@ -565,7 +569,7 @@ def build_snapshot(
         "generatedAt": format_utc(generated_at),
         "validUntil": format_utc(generated_at + valid_for),
         "pipeline": {
-            "runId": "run-{}".format(generated_at.strftime("%Y%m%dt%H%M%Sz").lower()),
+            "runId": run_id,
             "status": pipeline_status,
             "startedAt": format_utc(started_at),
             "completedAt": format_utc(generated_at),
