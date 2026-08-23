@@ -1,0 +1,134 @@
+name: Refresh Market Radar
+
+on:
+  schedule:
+    # GitHub cron is UTC. Turkey is UTC+3 year-round, so these map to
+    # 00:17, 08:17, 13:17, and 18:17 Europe/Istanbul time.
+    - cron: "17 5,10,15,21 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to R2; false performs a local dry run
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-radar-production
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Collect, validate, and refresh
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: market-radar-production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_PUBLIC_BUCKET: ${{ vars.R2_PUBLIC_BUCKET }}
+      R2_STATE_BUCKET: ${{ vars.R2_STATE_BUCKET }}
+      R2_PUBLIC_ACCESS_KEY_ID: ${{ secrets.R2_PUBLIC_ACCESS_KEY_ID }}
+      R2_PUBLIC_SECRET_ACCESS_KEY: ${{ secrets.R2_PUBLIC_SECRET_ACCESS_KEY }}
+      R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
+      R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install runtime and R2 dependencies
+        run: python -m pip install ".[r2]"
+
+      - name: Refresh snapshot
+        env:
+          PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || inputs.publish }}
+          SLOT: gha-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "${PUBLISH_REQUESTED}" == "true" ]]; then
+            python -m market_radar refresh \
+              --publish \
+              --target r2 \
+              --slot "${SLOT}" \
+              --output-dir out
+          else
+            python -m market_radar refresh \
+              --target local \
+              --slot "${SLOT}" \
+              --output-dir out \
+              --object-store-dir out/local-public \
+              --state-file out/local-state.json
+          fi
+
+      - name: Sanitize diagnostics
+        id: redact
+        if: always()
+        env:
+          MR_REDACT_FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          MR_REDACT_PUBLIC_ACCESS_KEY: ${{ secrets.R2_PUBLIC_ACCESS_KEY_ID }}
+          MR_REDACT_PUBLIC_SECRET_KEY: ${{ secrets.R2_PUBLIC_SECRET_ACCESS_KEY }}
+          MR_REDACT_STATE_ACCESS_KEY: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
+          MR_REDACT_STATE_SECRET_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path("out")
+          secret_values = tuple(
+              value.encode("utf-8")
+              for name, value in os.environ.items()
+              if name.startswith("MR_REDACT_") and value
+          )
+          changed = 0
+          if root.is_dir():
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  body = path.read_bytes()
+                  sanitized = body
+                  for secret in secret_values:
+                      sanitized = sanitized.replace(secret, b"[REDACTED]")
+                  if sanitized != body:
+                      path.write_bytes(sanitized)
+                      changed += 1
+          print("sanitized diagnostic files: {}".format(changed))
+          PY
+
+      - name: Upload redacted diagnostics
+        if: always() && steps.redact.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: market-radar-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summarize run
+        if: always()
+        env:
+          PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || inputs.publish }}
+        run: |
+          {
+            echo "## Market Radar refresh"
+            echo
+            echo "- Publish requested: ${PUBLISH_REQUESTED}"
+            echo "- Slot: gha-${GITHUB_RUN_ID}"
+            echo "- Run attempt: ${GITHUB_RUN_ATTEMPT}"
+            echo "- Diagnostics: market-radar-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,105 @@
+name: Live Source Smoke
+
+on:
+  schedule:
+    - cron: "43 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-source-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Exercise live sources without publishing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install runtime
+        run: python -m pip install .
+
+      - name: Run live dry-run
+        id: live
+        continue-on-error: true
+        run: |
+          python -m market_radar refresh \
+            --target local \
+            --slot "live-smoke-gha-${GITHUB_RUN_ID}" \
+            --output-dir out \
+            --object-store-dir out/local-public \
+            --state-file out/local-state.json
+
+      - name: Sanitize smoke diagnostics
+        id: redact
+        if: always()
+        env:
+          MR_REDACT_FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path("out")
+          secret_values = tuple(
+              value.encode("utf-8")
+              for name, value in os.environ.items()
+              if name.startswith("MR_REDACT_") and value
+          )
+          changed = 0
+          if root.is_dir():
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  body = path.read_bytes()
+                  sanitized = body
+                  for secret in secret_values:
+                      sanitized = sanitized.replace(secret, b"[REDACTED]")
+                  if sanitized != body:
+                      path.write_bytes(sanitized)
+                      changed += 1
+          print("sanitized diagnostic files: {}".format(changed))
+          PY
+
+      - name: Upload smoke diagnostics
+        if: always() && steps.redact.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-source-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Summarize smoke result
+        if: always()
+        env:
+          SMOKE_OUTCOME: ${{ steps.live.outcome }}
+        run: |
+          {
+            echo "## Live source smoke"
+            echo
+            echo "- Result: ${SMOKE_OUTCOME}"
+            echo "- Publication: disabled"
+            echo "- R2 credentials: not provided"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${SMOKE_OUTCOME}" != "success" ]]; then
+            echo "::warning::Live-source smoke failed; this workflow is intentionally nonblocking."
+          fi
