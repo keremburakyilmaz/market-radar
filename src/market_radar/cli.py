@@ -14,12 +14,18 @@ from typing import Any
 from market_radar.canonical import canonical_json_bytes, sha256_hex
 from market_radar.collector import collect_sources
 from market_radar.domain import CollectionBundle
+from market_radar.operations import OperationsService
 from market_radar.pipeline import PipelineRunner
 from market_radar.publishing import (
     Boto3R2ObjectStore,
     LocalObjectStore,
+    ObjectStore,
+    PublicationControlError,
+    PublicationControlRepository,
     Publisher,
+    PublishingError,
     StateRepository,
+    StateRepositoryError,
 )
 from market_radar.timeutil import parse_utc, utc_now
 from market_radar.validation import ContractValidationError, validate_manifest, validate_snapshot
@@ -95,14 +101,21 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
             output_dir=args.output_dir,
             publisher=Publisher(public_store),
             state_repository=StateRepository(state_store),
+            control_repository=PublicationControlRepository(state_store),
             clock=clock,
         )
     else:
         local_store = LocalObjectStore(args.object_store_dir)
+        control_repository = (
+            PublicationControlRepository(LocalObjectStore(args.control_store_dir))
+            if args.publish
+            else None
+        )
         runner = PipelineRunner(
             collector=collector,
             output_dir=args.output_dir,
             publisher=Publisher(local_store),
+            control_repository=control_repository,
             local_state_path=args.state_file,
             clock=clock,
         )
@@ -118,6 +131,48 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
         )
     else:
         print(f"dry-run candidate={outcome.candidate_path} report={outcome.report_path}")
+    return 0
+
+
+def _cmd_ops(args: argparse.Namespace) -> int:
+    actor = args.actor or os.environ.get("GITHUB_ACTOR") or "local-operator"
+    if args.operation == "rollback" and not args.snapshot_key:
+        raise ValueError("rollback requires --snapshot-key")
+    if args.operation != "rollback" and args.snapshot_key:
+        raise ValueError("--snapshot-key is accepted only for rollback")
+
+    state_store: ObjectStore
+    public_store: ObjectStore | None
+    if args.target == "r2":
+        state_store = _r2_store("STATE")
+        public_store = _r2_store("PUBLIC") if args.operation == "rollback" else None
+    else:
+        state_store = LocalObjectStore(args.state_object_store_dir)
+        public_store = (
+            LocalObjectStore(args.public_object_store_dir) if args.operation == "rollback" else None
+        )
+
+    service = OperationsService(
+        PublicationControlRepository(state_store),
+        publisher=Publisher(public_store) if public_store is not None else None,
+    )
+    if args.operation == "pause":
+        result = service.pause(reason=args.reason, actor=actor)
+        print(f"publication paused etag={result.control.etag}")
+    elif args.operation == "resume":
+        result = service.resume(reason=args.reason, actor=actor)
+        print(f"publication resumed etag={result.control.etag}")
+    else:
+        result = service.rollback(
+            snapshot_key=args.snapshot_key,
+            reason=args.reason,
+            actor=actor,
+        )
+        assert result.promotion is not None
+        print(
+            f"rollback promoted={result.promotion.snapshot_key} "
+            f"previous={result.promotion.previous_snapshot_key} publication=paused"
+        )
     return 0
 
 
@@ -144,7 +199,26 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("--output-dir", type=Path, default=Path("out"))
     refresh.add_argument("--object-store-dir", type=Path, default=Path("out/public"))
     refresh.add_argument("--state-file", type=Path, default=Path("state/state.json"))
+    refresh.add_argument("--control-store-dir", type=Path, default=Path("state/control"))
     refresh.set_defaults(handler=_cmd_refresh)
+
+    ops = subparsers.add_parser("ops", help="pause, resume, or roll back publication")
+    ops.add_argument("operation", choices=("pause", "resume", "rollback"))
+    ops.add_argument("--target", choices=("local", "r2"), default="local")
+    ops.add_argument("--snapshot-key")
+    ops.add_argument("--reason", required=True)
+    ops.add_argument("--actor")
+    ops.add_argument(
+        "--public-object-store-dir",
+        type=Path,
+        default=Path("out/public"),
+    )
+    ops.add_argument(
+        "--state-object-store-dir",
+        type=Path,
+        default=Path("state/control"),
+    )
+    ops.set_defaults(handler=_cmd_ops)
     return parser
 
 
@@ -153,6 +227,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (ContractValidationError, OSError, ValueError, json.JSONDecodeError) as error:
+    except (
+        ContractValidationError,
+        OSError,
+        PublicationControlError,
+        PublishingError,
+        StateRepositoryError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
