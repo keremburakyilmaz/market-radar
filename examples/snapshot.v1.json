@@ -1,0 +1,585 @@
+{
+  "schemaVersion": 1,
+  "id": "mr-20300115t120000z",
+  "generatedAt": "2030-01-15T12:00:00Z",
+  "validUntil": "2030-01-15T18:30:00Z",
+  "pipeline": {
+    "runId": "run-20300115t113500z-example",
+    "status": "healthy",
+    "startedAt": "2030-01-15T11:35:00Z",
+    "completedAt": "2030-01-15T11:59:00Z",
+    "coverage": {
+      "expectedSources": 5,
+      "successfulSources": 5,
+      "staleSources": 0,
+      "failedSources": 0,
+      "marketTags": [
+        "global",
+        "united-states",
+        "turkey",
+        "rates",
+        "fx"
+      ]
+    },
+    "publicNote": "Canonical schema fixture; all numeric values and scheduled events are illustrative."
+  },
+  "macroConditions": {
+    "score": 64,
+    "label": "restrictive",
+    "summary": "The illustrative inputs point to restrictive macro-financial conditions: U.S. rates and the broad dollar add pressure, while a positively sloped 2Y-10Y curve offsets a small part of it.",
+    "scoreScale": {
+      "minimum": 0,
+      "maximum": 100,
+      "higherMeans": "More restrictive macro-financial conditions"
+    },
+    "methodology": {
+      "id": "macro-conditions-v1",
+      "version": "1.0.0",
+      "description": "A deterministic weighted score built only from the published macro indicators. Each input is normalized against fixed historical bands; no language model or unrelated price signal affects the score.",
+      "baselineScore": 50,
+      "formula": "score = clamp(baselineScore + sum(driver contributionPoints), 0, 100)"
+    },
+    "drivers": [
+      {
+        "indicatorId": "us-treasury-2y",
+        "label": "U.S. Treasury 2Y",
+        "weight": 0.25,
+        "normalizedSignal": 0.5,
+        "contributionPoints": 5,
+        "direction": "restrictive",
+        "explanation": "The illustrative 2-year yield remains above the methodology's neutral band, indicating restrictive near-term rate conditions.",
+        "marketTags": [
+          "global",
+          "united-states",
+          "rates"
+        ]
+      },
+      {
+        "indicatorId": "us-treasury-10y",
+        "label": "U.S. Treasury 10Y",
+        "weight": 0.25,
+        "normalizedSignal": 0.6,
+        "contributionPoints": 6,
+        "direction": "restrictive",
+        "explanation": "The illustrative 10-year yield is above its neutral band and raises the long-duration cost of capital.",
+        "marketTags": [
+          "global",
+          "united-states",
+          "rates"
+        ]
+      },
+      {
+        "indicatorId": "us-curve-2s10s",
+        "label": "U.S. 2Y-10Y Curve",
+        "weight": 0.2,
+        "normalizedSignal": -0.1,
+        "contributionPoints": -1,
+        "direction": "supportive",
+        "explanation": "The illustrative positive curve slope modestly offsets the restrictive contribution from outright yield levels.",
+        "marketTags": [
+          "global",
+          "united-states",
+          "rates"
+        ]
+      },
+      {
+        "indicatorId": "fed-broad-usd",
+        "label": "Broad U.S. Dollar",
+        "weight": 0.2,
+        "normalizedSignal": 0.3,
+        "contributionPoints": 3,
+        "direction": "restrictive",
+        "explanation": "The illustrative broad dollar level is above its neutral band, tightening conditions for dollar-sensitive borrowers and trade.",
+        "marketTags": [
+          "global",
+          "united-states",
+          "fx"
+        ]
+      },
+      {
+        "indicatorId": "cbrt-usd-try",
+        "label": "CBRT USD/TRY",
+        "weight": 0.1,
+        "normalizedSignal": 0.2,
+        "contributionPoints": 1,
+        "direction": "restrictive",
+        "explanation": "The illustrative USD/TRY level adds a small Turkey-specific tightening contribution without being treated as a global signal.",
+        "marketTags": [
+          "turkey",
+          "fx"
+        ]
+      }
+    ]
+  },
+  "indicators": [
+    {
+      "id": "us-treasury-2y",
+      "label": "U.S. Treasury 2Y",
+      "rawValue": 4.25,
+      "displayValue": "4.25%",
+      "unit": "percent",
+      "change": {
+        "rawValue": -0.03,
+        "displayValue": "-3 bp",
+        "period": "previous-observation",
+        "direction": "down"
+      },
+      "observedAt": "2030-01-14T21:00:00Z",
+      "retrievedAt": "2030-01-15T11:40:00Z",
+      "freshness": {
+        "status": "fresh",
+        "ageSeconds": 54000,
+        "maxAgeSeconds": 172800
+      },
+      "macroSignal": "tightening",
+      "source": {
+        "sourceId": "us-treasury-rates",
+        "sourceName": "U.S. Department of the Treasury",
+        "sourceType": "official",
+        "sourceUrl": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+        "retrievedAt": "2030-01-15T11:40:00Z"
+      },
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ]
+    },
+    {
+      "id": "us-treasury-10y",
+      "label": "U.S. Treasury 10Y",
+      "rawValue": 4.5,
+      "displayValue": "4.50%",
+      "unit": "percent",
+      "change": {
+        "rawValue": -0.02,
+        "displayValue": "-2 bp",
+        "period": "previous-observation",
+        "direction": "down"
+      },
+      "observedAt": "2030-01-14T21:00:00Z",
+      "retrievedAt": "2030-01-15T11:40:00Z",
+      "freshness": {
+        "status": "fresh",
+        "ageSeconds": 54000,
+        "maxAgeSeconds": 172800
+      },
+      "macroSignal": "tightening",
+      "source": {
+        "sourceId": "us-treasury-rates",
+        "sourceName": "U.S. Department of the Treasury",
+        "sourceType": "official",
+        "sourceUrl": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+        "retrievedAt": "2030-01-15T11:40:00Z"
+      },
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ]
+    },
+    {
+      "id": "us-curve-2s10s",
+      "label": "U.S. 2Y-10Y Curve",
+      "rawValue": 25,
+      "displayValue": "+25 bp",
+      "unit": "basis-points",
+      "change": {
+        "rawValue": 1,
+        "displayValue": "+1 bp",
+        "period": "previous-observation",
+        "direction": "up"
+      },
+      "observedAt": "2030-01-14T21:00:00Z",
+      "retrievedAt": "2030-01-15T11:40:00Z",
+      "freshness": {
+        "status": "fresh",
+        "ageSeconds": 54000,
+        "maxAgeSeconds": 172800
+      },
+      "macroSignal": "easing",
+      "source": {
+        "sourceId": "us-treasury-rates",
+        "sourceName": "U.S. Department of the Treasury",
+        "sourceType": "official",
+        "sourceUrl": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+        "retrievedAt": "2030-01-15T11:40:00Z"
+      },
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ]
+    },
+    {
+      "id": "fed-broad-usd",
+      "label": "Broad U.S. Dollar Index",
+      "rawValue": 110.4,
+      "displayValue": "110.40",
+      "unit": "index",
+      "change": {
+        "rawValue": 0.2,
+        "displayValue": "+0.20",
+        "period": "previous-observation",
+        "direction": "up"
+      },
+      "observedAt": "2030-01-14T22:00:00Z",
+      "retrievedAt": "2030-01-15T11:45:00Z",
+      "freshness": {
+        "status": "fresh",
+        "ageSeconds": 50400,
+        "maxAgeSeconds": 172800
+      },
+      "macroSignal": "tightening",
+      "source": {
+        "sourceId": "federal-reserve-broad-dollar",
+        "sourceName": "Federal Reserve Bank of St. Louis",
+        "sourceType": "official",
+        "sourceUrl": "https://fred.stlouisfed.org/series/DTWEXBGS",
+        "retrievedAt": "2030-01-15T11:45:00Z"
+      },
+      "marketTags": [
+        "global",
+        "united-states",
+        "fx"
+      ]
+    },
+    {
+      "id": "cbrt-usd-try",
+      "label": "CBRT USD/TRY",
+      "rawValue": 35.5,
+      "displayValue": "35.5000",
+      "unit": "currency-rate",
+      "change": {
+        "rawValue": 0.08,
+        "displayValue": "+0.0800",
+        "period": "previous-observation",
+        "direction": "up"
+      },
+      "observedAt": "2030-01-15T10:00:00Z",
+      "retrievedAt": "2030-01-15T11:50:00Z",
+      "freshness": {
+        "status": "fresh",
+        "ageSeconds": 7200,
+        "maxAgeSeconds": 86400
+      },
+      "macroSignal": "tightening",
+      "source": {
+        "sourceId": "cbrt-evds",
+        "sourceName": "Central Bank of the Republic of Türkiye EVDS",
+        "sourceType": "official",
+        "sourceUrl": "https://evds2.tcmb.gov.tr/",
+        "retrievedAt": "2030-01-15T11:50:00Z"
+      },
+      "marketTags": [
+        "turkey",
+        "fx"
+      ]
+    }
+  ],
+  "priorityDevelopments": [
+    {
+      "id": "development-us-curve-positive",
+      "headline": "The illustrative U.S. 2Y-10Y curve remains positively sloped",
+      "summary": "The example 10-year yield is 25 basis points above the 2-year yield. The curve contribution is supportive, but outright yield levels keep the overall macro conditions score restrictive.",
+      "impact": "medium",
+      "firstSeenAt": "2030-01-15T11:40:00Z",
+      "updatedAt": "2030-01-15T11:40:00Z",
+      "provenance": [
+        {
+          "sourceId": "us-treasury-rates",
+          "sourceName": "U.S. Department of the Treasury",
+          "sourceType": "official",
+          "sourceUrl": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+          "retrievedAt": "2030-01-15T11:40:00Z"
+        }
+      ],
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ]
+    },
+    {
+      "id": "development-cbrt-usdtry",
+      "headline": "The illustrative CBRT USD/TRY observation moved higher",
+      "summary": "The example daily move is small but directionally restrictive for the Turkey-specific portion of the macro conditions score.",
+      "impact": "medium",
+      "firstSeenAt": "2030-01-15T11:50:00Z",
+      "updatedAt": "2030-01-15T11:50:00Z",
+      "provenance": [
+        {
+          "sourceId": "cbrt-evds",
+          "sourceName": "Central Bank of the Republic of Türkiye EVDS",
+          "sourceType": "official",
+          "sourceUrl": "https://evds2.tcmb.gov.tr/",
+          "retrievedAt": "2030-01-15T11:50:00Z"
+        }
+      ],
+      "marketTags": [
+        "turkey",
+        "fx"
+      ]
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-us-yield-curve",
+      "headline": "Official Treasury observations show a positive example 2Y-10Y slope",
+      "summary": "The canonical fixture places the 2-year yield at 4.25% and the 10-year yield at 4.50%.",
+      "whyItMatters": "The slope offsets some pressure from high outright yields, so the score exposes the curve and the levels as separate drivers.",
+      "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+      "publisher": "U.S. Department of the Treasury",
+      "publishedAt": "2030-01-14T21:00:00Z",
+      "retrievedAt": "2030-01-15T11:40:00Z",
+      "impact": "medium",
+      "category": "rates",
+      "provenance": [
+        {
+          "sourceId": "us-treasury-rates",
+          "sourceName": "U.S. Department of the Treasury",
+          "sourceType": "official",
+          "sourceUrl": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+          "retrievedAt": "2030-01-15T11:40:00Z"
+        }
+      ],
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ]
+    },
+    {
+      "id": "story-broad-us-dollar",
+      "headline": "The broad U.S. dollar measure is firm in the canonical example",
+      "summary": "The illustrative broad dollar index is 110.40, up 0.20 from its previous observation.",
+      "whyItMatters": "A stronger broad dollar can tighten financing and trade conditions outside the United States, so it contributes separately from interest rates.",
+      "url": "https://fred.stlouisfed.org/series/DTWEXBGS",
+      "publisher": "Federal Reserve Bank of St. Louis",
+      "publishedAt": "2030-01-14T22:00:00Z",
+      "retrievedAt": "2030-01-15T11:45:00Z",
+      "impact": "medium",
+      "category": "fx",
+      "provenance": [
+        {
+          "sourceId": "federal-reserve-broad-dollar",
+          "sourceName": "Federal Reserve Bank of St. Louis",
+          "sourceType": "official",
+          "sourceUrl": "https://fred.stlouisfed.org/series/DTWEXBGS",
+          "retrievedAt": "2030-01-15T11:45:00Z"
+        }
+      ],
+      "marketTags": [
+        "global",
+        "united-states",
+        "fx"
+      ]
+    },
+    {
+      "id": "story-cbrt-usdtry",
+      "headline": "CBRT EVDS supplies the example USD/TRY observation",
+      "summary": "The illustrative USD/TRY value is 35.5000 and is tagged only for the Turkey and foreign-exchange views.",
+      "whyItMatters": "Separating the Turkey-specific input prevents a local currency move from being mislabeled as a global macro condition.",
+      "url": "https://evds2.tcmb.gov.tr/",
+      "publisher": "Central Bank of the Republic of Türkiye",
+      "publishedAt": "2030-01-15T10:00:00Z",
+      "retrievedAt": "2030-01-15T11:50:00Z",
+      "impact": "medium",
+      "category": "fx",
+      "provenance": [
+        {
+          "sourceId": "cbrt-evds",
+          "sourceName": "Central Bank of the Republic of Türkiye EVDS",
+          "sourceType": "official",
+          "sourceUrl": "https://evds2.tcmb.gov.tr/",
+          "retrievedAt": "2030-01-15T11:50:00Z"
+        }
+      ],
+      "marketTags": [
+        "turkey",
+        "fx"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "id": "calendar-us-cpi-example",
+      "title": "Consumer Price Index release",
+      "countryCode": "US",
+      "scheduledAt": "2030-01-15T13:30:00Z",
+      "timezone": "America/New_York",
+      "status": "scheduled",
+      "impact": "high",
+      "previous": "2.8% YoY",
+      "forecast": null,
+      "actual": null,
+      "unit": "year-over-year percent",
+      "referencePeriod": "December 2029",
+      "marketTags": [
+        "global",
+        "united-states",
+        "inflation"
+      ],
+      "source": {
+        "sourceId": "bls-cpi-calendar",
+        "sourceName": "U.S. Bureau of Labor Statistics",
+        "sourceType": "official",
+        "sourceUrl": "https://www.bls.gov/schedule/news_release/cpi.htm",
+        "retrievedAt": "2030-01-15T11:55:00Z"
+      }
+    },
+    {
+      "id": "calendar-cbrt-mpc-example",
+      "title": "CBRT Monetary Policy Committee decision",
+      "countryCode": "TR",
+      "scheduledAt": "2030-01-17T11:00:00Z",
+      "timezone": "Europe/Istanbul",
+      "status": "scheduled",
+      "impact": "high",
+      "previous": "45.00%",
+      "forecast": null,
+      "actual": null,
+      "unit": "policy rate percent",
+      "marketTags": [
+        "turkey",
+        "rates",
+        "central-banks"
+      ],
+      "source": {
+        "sourceId": "cbrt-calendar",
+        "sourceName": "Central Bank of the Republic of Türkiye",
+        "sourceType": "official",
+        "sourceUrl": "https://www.tcmb.gov.tr/wps/wcm/connect/en/tcmb+en/main+menu/core+functions/monetary+policy/mpc/meeting+calendars",
+        "retrievedAt": "2030-01-15T11:55:00Z"
+      }
+    }
+  ],
+  "digest": {
+    "id": "digest-20300115t120000z",
+    "periodStart": "2030-01-14T12:00:00Z",
+    "periodEnd": "2030-01-15T12:00:00Z",
+    "generatedAt": "2030-01-15T12:00:00Z",
+    "title": "Rates and the broad dollar keep example conditions restrictive",
+    "summary": "The canonical fixture scores macro-financial conditions at 64 out of 100. U.S. rate levels and a firm broad dollar contribute most of the restriction; the positive 2Y-10Y slope offsets one point, while USD/TRY adds a small Turkey-specific contribution.",
+    "highlights": [
+      {
+        "id": "highlight-us-rates",
+        "text": "The 2-year and 10-year Treasury levels add 11 points to the deterministic score.",
+        "impact": "high",
+        "relatedStoryIds": [
+          "story-us-yield-curve"
+        ]
+      },
+      {
+        "id": "highlight-broad-dollar",
+        "text": "The broad U.S. dollar input adds three points and remains independently traceable to its official series.",
+        "impact": "medium",
+        "relatedStoryIds": [
+          "story-broad-us-dollar"
+        ]
+      },
+      {
+        "id": "highlight-turkey-fx",
+        "text": "USD/TRY adds one point only to the Turkey-tagged view and is not treated as a global risk signal.",
+        "impact": "medium",
+        "relatedStoryIds": [
+          "story-cbrt-usdtry"
+        ]
+      }
+    ],
+    "storyIds": [
+      "story-us-yield-curve",
+      "story-broad-us-dollar",
+      "story-cbrt-usdtry"
+    ],
+    "itemCount": 3,
+    "marketTags": [
+      "global",
+      "united-states",
+      "turkey",
+      "rates",
+      "fx"
+    ]
+  },
+  "sources": [
+    {
+      "id": "us-treasury-rates",
+      "name": "U.S. Department of the Treasury",
+      "type": "official",
+      "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+      "status": "healthy",
+      "lastAttemptAt": "2030-01-15T11:40:00Z",
+      "lastSuccessAt": "2030-01-15T11:40:00Z",
+      "itemsUsed": 3,
+      "marketTags": [
+        "global",
+        "united-states",
+        "rates"
+      ],
+      "publicMessage": "Latest scheduled retrieval succeeded."
+    },
+    {
+      "id": "federal-reserve-broad-dollar",
+      "name": "Federal Reserve Bank of St. Louis",
+      "type": "official",
+      "url": "https://fred.stlouisfed.org/series/DTWEXBGS",
+      "status": "healthy",
+      "lastAttemptAt": "2030-01-15T11:45:00Z",
+      "lastSuccessAt": "2030-01-15T11:45:00Z",
+      "itemsUsed": 1,
+      "marketTags": [
+        "global",
+        "united-states",
+        "fx"
+      ],
+      "publicMessage": "Latest scheduled retrieval succeeded."
+    },
+    {
+      "id": "cbrt-evds",
+      "name": "Central Bank of the Republic of Türkiye EVDS",
+      "type": "official",
+      "url": "https://evds2.tcmb.gov.tr/",
+      "status": "healthy",
+      "lastAttemptAt": "2030-01-15T11:50:00Z",
+      "lastSuccessAt": "2030-01-15T11:50:00Z",
+      "itemsUsed": 1,
+      "marketTags": [
+        "turkey",
+        "fx"
+      ],
+      "publicMessage": "Latest scheduled retrieval succeeded."
+    },
+    {
+      "id": "bls-cpi-calendar",
+      "name": "U.S. Bureau of Labor Statistics",
+      "type": "official",
+      "url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "status": "healthy",
+      "lastAttemptAt": "2030-01-15T11:55:00Z",
+      "lastSuccessAt": "2030-01-15T11:55:00Z",
+      "itemsUsed": 1,
+      "marketTags": [
+        "global",
+        "united-states",
+        "inflation"
+      ],
+      "publicMessage": "Latest scheduled retrieval succeeded."
+    },
+    {
+      "id": "cbrt-calendar",
+      "name": "Central Bank of the Republic of Türkiye",
+      "type": "official",
+      "url": "https://www.tcmb.gov.tr/wps/wcm/connect/en/tcmb+en/main+menu/core+functions/monetary+policy/mpc/meeting+calendars",
+      "status": "healthy",
+      "lastAttemptAt": "2030-01-15T11:55:00Z",
+      "lastSuccessAt": "2030-01-15T11:55:00Z",
+      "itemsUsed": 1,
+      "marketTags": [
+        "turkey",
+        "rates",
+        "central-banks"
+      ],
+      "publicMessage": "Latest scheduled retrieval succeeded."
+    }
+  ]
+}

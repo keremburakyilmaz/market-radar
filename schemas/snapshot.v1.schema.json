@@ -1,0 +1,898 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://radar-data.keremburakyilmaz.com/schemas/snapshot.v1.schema.json",
+  "title": "Market Radar public snapshot v1",
+  "description": "A bounded, frontend-safe macro conditions snapshot with explicit freshness and provenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "generatedAt",
+    "validUntil",
+    "pipeline",
+    "macroConditions",
+    "indicators",
+    "priorityDevelopments",
+    "stories",
+    "calendar",
+    "digest",
+    "sources"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/snapshotId"
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/utcTimestamp"
+    },
+    "validUntil": {
+      "$ref": "#/$defs/utcTimestamp"
+    },
+    "pipeline": {
+      "$ref": "#/$defs/pipeline"
+    },
+    "macroConditions": {
+      "$ref": "#/$defs/macroConditions"
+    },
+    "indicators": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": {
+        "$ref": "#/$defs/indicator"
+      }
+    },
+    "priorityDevelopments": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "$ref": "#/$defs/priorityDevelopment"
+      }
+    },
+    "stories": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/story"
+      }
+    },
+    "calendar": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "$ref": "#/$defs/officialCalendarEvent"
+      }
+    },
+    "digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": {
+        "$ref": "#/$defs/sourceHealth"
+      }
+    }
+  },
+  "$defs": {
+    "snapshotId": {
+      "type": "string",
+      "minLength": 19,
+      "maxLength": 19,
+      "pattern": "^mr-[0-9]{8}t[0-9]{6}z$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 48,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "nullableUtcTimestamp": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 12,
+      "maxLength": 500,
+      "pattern": "^https://(?![^/]*@)[^\\s<>]+$"
+    },
+    "safeShortText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^<>]*$"
+    },
+    "safeMediumText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[^<>]*$"
+    },
+    "safeLongText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 800,
+      "pattern": "^[^<>]*$"
+    },
+    "nullableDisplayText": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[^<>]*$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "marketTags": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/slug"
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "completedAt",
+        "coverage"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "degraded"
+          ]
+        },
+        "startedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expectedSources",
+            "successfulSources",
+            "staleSources",
+            "failedSources",
+            "marketTags"
+          ],
+          "properties": {
+            "expectedSources": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "successfulSources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            },
+            "staleSources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            },
+            "failedSources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            },
+            "marketTags": {
+              "$ref": "#/$defs/marketTags"
+            }
+          }
+        },
+        "publicNote": {
+          "$ref": "#/$defs/safeMediumText"
+        }
+      }
+    },
+    "macroConditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "score",
+        "label",
+        "summary",
+        "scoreScale",
+        "methodology",
+        "drivers"
+      ],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "label": {
+          "enum": [
+            "supportive",
+            "balanced",
+            "restrictive"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "scoreScale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "minimum",
+            "maximum",
+            "higherMeans"
+          ],
+          "properties": {
+            "minimum": {
+              "const": 0
+            },
+            "maximum": {
+              "const": 100
+            },
+            "higherMeans": {
+              "const": "More restrictive macro-financial conditions"
+            }
+          }
+        },
+        "methodology": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "description",
+            "baselineScore",
+            "formula"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/slug"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 24,
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "description": {
+              "$ref": "#/$defs/safeLongText"
+            },
+            "baselineScore": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "formula": {
+              "$ref": "#/$defs/safeMediumText"
+            }
+          }
+        },
+        "drivers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "indicatorId",
+              "label",
+              "weight",
+              "normalizedSignal",
+              "contributionPoints",
+              "direction",
+              "explanation",
+              "marketTags"
+            ],
+            "properties": {
+              "indicatorId": {
+                "$ref": "#/$defs/identifier"
+              },
+              "label": {
+                "$ref": "#/$defs/safeShortText"
+              },
+              "weight": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "normalizedSignal": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "contributionPoints": {
+                "type": "number",
+                "minimum": -50,
+                "maximum": 50
+              },
+              "direction": {
+                "enum": [
+                  "supportive",
+                  "balanced",
+                  "restrictive"
+                ]
+              },
+              "explanation": {
+                "$ref": "#/$defs/safeMediumText"
+              },
+              "marketTags": {
+                "$ref": "#/$defs/marketTags"
+              }
+            }
+          }
+        }
+      }
+    },
+    "indicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "rawValue",
+        "displayValue",
+        "unit",
+        "change",
+        "observedAt",
+        "retrievedAt",
+        "freshness",
+        "macroSignal",
+        "source",
+        "marketTags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "rawValue": {
+          "type": "number",
+          "minimum": -1000000000,
+          "maximum": 1000000000
+        },
+        "displayValue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[^<>]*$"
+        },
+        "unit": {
+          "enum": [
+            "percent",
+            "basis-points",
+            "index",
+            "currency-rate"
+          ]
+        },
+        "change": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/indicatorChange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "retrievedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "freshness": {
+          "$ref": "#/$defs/freshness"
+        },
+        "macroSignal": {
+          "enum": [
+            "easing",
+            "neutral",
+            "tightening",
+            "mixed"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/provenance"
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        }
+      }
+    },
+    "indicatorChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawValue",
+        "displayValue",
+        "period",
+        "direction"
+      ],
+      "properties": {
+        "rawValue": {
+          "type": "number",
+          "minimum": -1000000000,
+          "maximum": 1000000000
+        },
+        "displayValue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[^<>]*$"
+        },
+        "period": {
+          "enum": [
+            "previous-observation",
+            "one-day",
+            "one-week"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "up",
+            "down",
+            "flat"
+          ]
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "ageSeconds",
+        "maxAgeSeconds"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "fresh",
+            "stale"
+          ]
+        },
+        "ageSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2592000
+        },
+        "maxAgeSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 604800
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceId",
+        "sourceName",
+        "sourceType",
+        "sourceUrl",
+        "retrievedAt"
+      ],
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "sourceName": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "sourceType": {
+          "enum": [
+            "official",
+            "public-data",
+            "news"
+          ]
+        },
+        "sourceUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "retrievedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        }
+      }
+    },
+    "priorityDevelopment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "headline",
+        "summary",
+        "impact",
+        "firstSeenAt",
+        "updatedAt",
+        "provenance",
+        "marketTags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "headline": {
+          "$ref": "#/$defs/safeMediumText"
+        },
+        "summary": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "impact": {
+          "$ref": "#/$defs/impact"
+        },
+        "firstSeenAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/provenance"
+          }
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        }
+      }
+    },
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "headline",
+        "summary",
+        "whyItMatters",
+        "url",
+        "publisher",
+        "publishedAt",
+        "retrievedAt",
+        "impact",
+        "category",
+        "provenance",
+        "marketTags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "headline": {
+          "$ref": "#/$defs/safeMediumText"
+        },
+        "summary": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "whyItMatters": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "publisher": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "publishedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "retrievedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "impact": {
+          "$ref": "#/$defs/impact"
+        },
+        "category": {
+          "$ref": "#/$defs/slug"
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/provenance"
+          }
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        }
+      }
+    },
+    "officialCalendarEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "countryCode",
+        "scheduledAt",
+        "timezone",
+        "status",
+        "impact",
+        "previous",
+        "forecast",
+        "actual",
+        "unit",
+        "marketTags",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "$ref": "#/$defs/safeMediumText"
+        },
+        "countryCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "scheduledAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_]+(?:/[A-Za-z0-9_+.-]+)+$"
+        },
+        "status": {
+          "enum": [
+            "scheduled",
+            "released",
+            "revised",
+            "cancelled"
+          ]
+        },
+        "impact": {
+          "$ref": "#/$defs/impact"
+        },
+        "previous": {
+          "$ref": "#/$defs/nullableDisplayText"
+        },
+        "forecast": {
+          "$ref": "#/$defs/nullableDisplayText"
+        },
+        "actual": {
+          "$ref": "#/$defs/nullableDisplayText"
+        },
+        "unit": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "referencePeriod": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        },
+        "source": {
+          "$ref": "#/$defs/officialSource"
+        }
+      }
+    },
+    "officialSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceId",
+        "sourceName",
+        "sourceType",
+        "sourceUrl",
+        "retrievedAt"
+      ],
+      "properties": {
+        "sourceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "sourceName": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "sourceType": {
+          "const": "official"
+        },
+        "sourceUrl": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "retrievedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        }
+      }
+    },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "periodStart",
+        "periodEnd",
+        "generatedAt",
+        "title",
+        "summary",
+        "highlights",
+        "storyIds",
+        "itemCount",
+        "marketTags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "periodStart": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "periodEnd": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "generatedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "title": {
+          "$ref": "#/$defs/safeMediumText"
+        },
+        "summary": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "highlights": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "text",
+              "impact",
+              "relatedStoryIds"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "text": {
+                "$ref": "#/$defs/safeLongText"
+              },
+              "impact": {
+                "$ref": "#/$defs/impact"
+              },
+              "relatedStoryIds": {
+                "type": "array",
+                "maxItems": 12,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/identifier"
+                }
+              }
+            }
+          }
+        },
+        "storyIds": {
+          "type": "array",
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        }
+      }
+    },
+    "sourceHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "type",
+        "url",
+        "status",
+        "lastAttemptAt",
+        "lastSuccessAt",
+        "itemsUsed",
+        "marketTags"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/safeShortText"
+        },
+        "type": {
+          "enum": [
+            "official",
+            "public-data",
+            "news"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "stale",
+            "unavailable"
+          ]
+        },
+        "lastAttemptAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "lastSuccessAt": {
+          "$ref": "#/$defs/nullableUtcTimestamp"
+        },
+        "itemsUsed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "marketTags": {
+          "$ref": "#/$defs/marketTags"
+        },
+        "publicMessage": {
+          "$ref": "#/$defs/safeMediumText"
+        }
+      }
+    },
+    "impact": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    }
+  }
+}

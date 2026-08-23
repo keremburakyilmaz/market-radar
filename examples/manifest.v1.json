@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "publishedAt": "2030-01-15T12:00:05Z",
+  "snapshot": {
+    "schemaVersion": 1,
+    "id": "mr-20300115t120000z",
+    "path": "v1/snapshots/2030/01/15/2030-01-15T12-00-00Z-3efca314e1f52d2d34fbc51f8a28c66d24369c4cba46a8a9acf585d7928525c5.json",
+    "generatedAt": "2030-01-15T12:00:00Z",
+    "validUntil": "2030-01-15T18:30:00Z",
+    "sizeBytes": 14263,
+    "sha256": "3efca314e1f52d2d34fbc51f8a28c66d24369c4cba46a8a9acf585d7928525c5"
+  }
+}
