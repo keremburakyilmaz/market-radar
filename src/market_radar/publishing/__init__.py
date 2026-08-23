@@ -20,12 +20,21 @@ from .store import (
     ObjectStoreConflictError,
     StoredObject,
 )
+from .state_repository import (
+    LoadedState,
+    SavedState,
+    StateConflictError,
+    StateIntegrityError,
+    StateRepository,
+    StateRepositoryError,
+)
 
 __all__ = [
     "Boto3R2ObjectStore",
     "JSON_CONTENT_TYPE",
     "LATEST_KEY",
     "LocalObjectStore",
+    "LoadedState",
     "ObjectStore",
     "ObjectStoreConflictError",
     "POINTER_CACHE_CONTROL",
@@ -35,7 +44,12 @@ __all__ = [
     "PublishingError",
     "PublishVerificationError",
     "SNAPSHOT_CACHE_CONTROL",
+    "SavedState",
     "SnapshotSerializationError",
     "StoredObject",
+    "StateConflictError",
+    "StateIntegrityError",
+    "StateRepository",
+    "StateRepositoryError",
     "canonical_json_bytes",
 ]
