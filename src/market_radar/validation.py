@@ -248,12 +248,11 @@ def validate_manifest(manifest: Any) -> Dict[str, Any]:
     if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
         issues.append(ValidationIssue("$.snapshot.sha256", "must be a lowercase SHA-256 digest"))
     size = snapshot.get("sizeBytes")
-    if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 2_000_000:
-        issues.append(ValidationIssue("$.snapshot.sizeBytes", "must be between 1 and 2,000,000"))
+    if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 524_288:
+        issues.append(ValidationIssue("$.snapshot.sizeBytes", "must be between 1 and 524,288"))
     _parse_timestamp(snapshot.get("generatedAt"), "$.snapshot.generatedAt", issues)
     _parse_timestamp(snapshot.get("validUntil"), "$.snapshot.validUntil", issues)
     _walk_json(root, "$", issues)
     if issues:
         raise ContractValidationError(issues)
     return dict(root)
-
