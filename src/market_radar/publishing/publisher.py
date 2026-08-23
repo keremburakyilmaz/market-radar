@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from market_radar.canonical import canonical_json_bytes as _canonical_json_bytes
 from market_radar.canonical import sha256_hex
+from market_radar.validation import SNAPSHOT_PATH_PATTERN, validate_manifest, validate_snapshot
 
 from .store import ObjectStore, ObjectStoreConflictError, StoredObject
 
@@ -46,6 +47,15 @@ class PublishResult:
     snapshot_created: bool
     latest_updated: bool
     dry_run: bool
+
+
+@dataclass(frozen=True)
+class PromotionResult:
+    snapshot_key: str
+    snapshot_sha256: str
+    previous_snapshot_key: str | None
+    latest_etag: str
+    latest_updated: bool
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -114,12 +124,75 @@ class Publisher:
             dry_run=False,
         )
 
+    def promote_existing(self, snapshot_key: str) -> PromotionResult:
+        """Conditionally point ``latest`` at a verified immutable snapshot.
+
+        Promotion is the only supported public rollback primitive. It never
+        copies or rewrites snapshot bytes and refuses objects that do not match
+        the v1 contract, their content-addressed key, or immutable metadata.
+        """
+
+        match = SNAPSHOT_PATH_PATTERN.fullmatch(snapshot_key)
+        if match is None:
+            raise PublishVerificationError("snapshot promotion key is unsafe")
+
+        stored_snapshot = self.store.get(snapshot_key)
+        if stored_snapshot is None:
+            raise PublishVerificationError("snapshot promotion target does not exist")
+        self._verify_metadata(
+            snapshot_key,
+            stored_snapshot,
+            content_type=JSON_CONTENT_TYPE,
+            cache_control=SNAPSHOT_CACHE_CONTROL,
+        )
+
+        digest = self._sha256(stored_snapshot.body)
+        if match.group("sha256") != digest:
+            raise PublishVerificationError("snapshot promotion target hash does not match its key")
+
+        snapshot = self._validated_snapshot(stored_snapshot.body)
+        generated_at, generated_at_text = self._generated_at(snapshot)
+        if self._snapshot_key(generated_at, digest) != snapshot_key:
+            raise PublishVerificationError(
+                "snapshot promotion target path does not match its payload"
+            )
+
+        latest_body = self._manifest_body(
+            snapshot,
+            snapshot_key=snapshot_key,
+            snapshot_sha256=digest,
+            snapshot_size=len(stored_snapshot.body),
+            generated_at_text=generated_at_text,
+        )
+        validate_manifest(self._parse_json_object(latest_body, "rollback manifest"))
+
+        previous = self.store.get(self.latest_key)
+        previous_snapshot_key = self._manifest_snapshot_key(previous)
+        latest_object, latest_updated = self._update_latest(
+            latest_body,
+            previous=previous,
+            previous_loaded=True,
+        )
+        return PromotionResult(
+            snapshot_key=snapshot_key,
+            snapshot_sha256=digest,
+            previous_snapshot_key=previous_snapshot_key,
+            latest_etag=latest_object.etag,
+            latest_updated=latest_updated,
+        )
+
     def _ensure_snapshot(
         self, key: str, expected_body: bytes, expected_sha256: str
     ) -> tuple[StoredObject, bool]:
         existing = self.store.get(key)
         if existing is not None:
             self._verify_body(key, existing.body, expected_body, expected_sha256)
+            self._verify_metadata(
+                key,
+                existing,
+                content_type=JSON_CONTENT_TYPE,
+                cache_control=SNAPSHOT_CACHE_CONTROL,
+            )
             return existing, False
 
         try:
@@ -148,8 +221,15 @@ class Publisher:
         )
         return stored, created
 
-    def _update_latest(self, expected_body: bytes) -> tuple[StoredObject, bool]:
-        previous = self.store.get(self.latest_key)
+    def _update_latest(
+        self,
+        expected_body: bytes,
+        *,
+        previous: StoredObject | None = None,
+        previous_loaded: bool = False,
+    ) -> tuple[StoredObject, bool]:
+        if not previous_loaded:
+            previous = self.store.get(self.latest_key)
         if previous is not None and (
             previous.body == expected_body
             or self._same_snapshot_pointer(previous.body, expected_body)
@@ -190,6 +270,41 @@ class Publisher:
             cache_control=POINTER_CACHE_CONTROL,
         )
         return stored, True
+
+    @staticmethod
+    def _parse_json_object(body: bytes, label: str) -> dict[str, Any]:
+        try:
+            value = json.loads(body.decode("utf-8"), parse_constant=_reject_constant)
+        except (UnicodeDecodeError, ValueError) as error:
+            raise PublishVerificationError(f"{label} is not strict JSON") from error
+        if not isinstance(value, dict):
+            raise PublishVerificationError(f"{label} root is not an object")
+        return value
+
+    @classmethod
+    def _validated_snapshot(cls, body: bytes) -> dict[str, Any]:
+        snapshot = cls._parse_json_object(body, "snapshot promotion target")
+        try:
+            validate_snapshot(snapshot)
+        except ValueError as error:
+            raise PublishVerificationError(
+                "snapshot promotion target does not satisfy the public contract"
+            ) from error
+        if canonical_json_bytes(snapshot) != body:
+            raise PublishVerificationError("snapshot promotion target is not canonical JSON")
+        return snapshot
+
+    @staticmethod
+    def _manifest_snapshot_key(stored: StoredObject | None) -> str | None:
+        if stored is None:
+            return None
+        try:
+            manifest = json.loads(stored.body.decode("utf-8"))
+            pointer = manifest.get("snapshot") if isinstance(manifest, dict) else None
+            path = pointer.get("path") if isinstance(pointer, dict) else None
+            return path if isinstance(path, str) else None
+        except (UnicodeDecodeError, ValueError):
+            return None
 
     @staticmethod
     def _verify_body(
@@ -308,3 +423,7 @@ class Publisher:
     @staticmethod
     def _sha256(body: bytes) -> str:
         return sha256_hex(body)
+
+
+def _reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant is not allowed: {value}")

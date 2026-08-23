@@ -4,9 +4,12 @@ import json
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EXAMPLE_SNAPSHOT = PROJECT_ROOT / "examples" / "snapshot.v1.json"
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from market_radar.publishing import (  # noqa: E402
@@ -34,6 +37,17 @@ def snapshot(value: int = 1):
         "status": "healthy",
         "nested": {"z": value, "a": [3, 2, 1]},
     }
+
+
+def valid_snapshot():
+    return json.loads(EXAMPLE_SNAPSHOT.read_text(encoding="utf-8"))
+
+
+def valid_publisher(store):
+    return Publisher(
+        store,
+        clock=lambda: datetime(2030, 1, 15, 13, 0, tzinfo=timezone.utc),
+    )
 
 
 class DelegatingStore:
@@ -198,6 +212,66 @@ class PublishingTests(unittest.TestCase):
             if_match=first.etag,
         )
         self.assertNotEqual(first.etag, second.etag)
+
+    def test_promotes_only_a_verified_existing_immutable_snapshot(self) -> None:
+        publisher = valid_publisher(self.store)
+        first_snapshot = valid_snapshot()
+        first = publisher.publish(first_snapshot)
+        second_snapshot = deepcopy(first_snapshot)
+        second_snapshot["digest"]["summary"] = "A later interpretation of the same inputs."
+        second = publisher.publish(second_snapshot)
+
+        promoted = publisher.promote_existing(first.snapshot_key)
+
+        self.assertTrue(promoted.latest_updated)
+        self.assertEqual(promoted.snapshot_key, first.snapshot_key)
+        self.assertEqual(promoted.previous_snapshot_key, second.snapshot_key)
+        latest = self.store.get(LATEST_KEY)
+        assert latest is not None
+        manifest = validate_manifest(json.loads(latest.body.decode("utf-8")))
+        self.assertEqual(manifest["snapshot"]["path"], first.snapshot_key)
+        self.assertEqual(manifest["snapshot"]["sha256"], first.snapshot_sha256)
+
+    def test_promotion_rejects_missing_unsafe_or_non_contract_objects(self) -> None:
+        publisher = Publisher(self.store)
+        with self.assertRaisesRegex(PublishVerificationError, "unsafe"):
+            publisher.promote_existing("../snapshot.json")
+        missing_key = "v1/snapshots/2026/08/23/2026-08-23T12-34-56Z-" + "a" * 64 + ".json"
+        with self.assertRaisesRegex(PublishVerificationError, "does not exist"):
+            publisher.promote_existing(missing_key)
+
+        non_contract = publisher.publish(snapshot())
+        with self.assertRaisesRegex(PublishVerificationError, "public contract"):
+            publisher.promote_existing(non_contract.snapshot_key)
+
+    def test_promotion_rejects_a_key_that_does_not_match_stored_bytes(self) -> None:
+        key = "v1/snapshots/2026/08/23/2026-08-23T12-34-56Z-" + "a" * 64 + ".json"
+        self.store.put(
+            key,
+            b"{}",
+            content_type=JSON_CONTENT_TYPE,
+            cache_control=SNAPSHOT_CACHE_CONTROL,
+            if_none_match=True,
+        )
+
+        with self.assertRaisesRegex(PublishVerificationError, "hash"):
+            Publisher(self.store).promote_existing(key)
+
+    def test_promotion_latest_pointer_conflict_fails_closed(self) -> None:
+        publisher = valid_publisher(self.store)
+        first_snapshot = valid_snapshot()
+        first = publisher.publish(first_snapshot)
+        second_snapshot = deepcopy(first_snapshot)
+        second_snapshot["digest"]["summary"] = "A competing current interpretation."
+        publisher.publish(second_snapshot)
+        conflicting_store = ConflictingLatestStore(self.store)
+
+        with self.assertRaises(PublishConflictError):
+            valid_publisher(conflicting_store).promote_existing(first.snapshot_key)
+
+        latest = self.store.get(LATEST_KEY)
+        assert latest is not None
+        self.assertEqual(latest.body, b'{"writer":"other"}')
 
 
 if __name__ == "__main__":
