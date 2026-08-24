@@ -45,3 +45,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.9"
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+module = "boto3"
+ignore_missing_imports = true

@@ -288,7 +288,7 @@ class Boto3R2ObjectStore:
     def _get_client(self) -> Any:
         if self._client is None:
             try:
-                import boto3  # type: ignore[import-untyped]
+                import boto3
             except ImportError as error:
                 raise RuntimeError("boto3 is required to use Boto3R2ObjectStore") from error
 
