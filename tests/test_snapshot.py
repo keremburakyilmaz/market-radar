@@ -136,6 +136,34 @@ class SnapshotBuilderTests(unittest.TestCase):
         self.assertEqual(result.snapshot["priorityDevelopments"], [])
         self.assertEqual(result.snapshot["stories"], [])
 
+    def test_daily_brief_excludes_unseen_releases_older_than_24_hours(self):
+        bundle = self.bundle()
+        old_release = CollectedRelease(
+            release_id="fed-old-fomc",
+            title="Federal Reserve issues older FOMC statement",
+            url="https://www.federalreserve.gov/newsevents/pressreleases/monetary20260801a.htm",
+            published_at=NOW - timedelta(days=2),
+            retrieved_at=NOW,
+            source=FED,
+            category="central-bank",
+        )
+        with_old_release = CollectionBundle(
+            indicators=bundle.indicators,
+            releases=(*bundle.releases, old_release),
+            calendar=bundle.calendar,
+            source_health=bundle.source_health,
+            histories=bundle.histories,
+        )
+
+        snapshot = build_snapshot(
+            with_old_release, RadarState(), generated_at=NOW
+        ).snapshot
+
+        self.assertNotIn(
+            "fed-old-fomc",
+            {story["id"] for story in snapshot["stories"]},
+        )
+
     def test_missing_broad_usd_publishes_degraded(self):
         bundle = self.bundle()
         reduced = CollectionBundle(

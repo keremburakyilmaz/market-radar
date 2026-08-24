@@ -729,6 +729,8 @@ def build_snapshot(
             release
             for release in releases
             if release.url not in previous_state.seen_release_urls
+            and generated_at - timedelta(hours=24) <= release.published_at
+            <= generated_at + timedelta(minutes=5)
             and _release_relevance(release) > 0
         ),
         key=_release_rank,
