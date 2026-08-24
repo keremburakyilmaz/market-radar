@@ -33,25 +33,38 @@ _FRESHNESS_SECONDS = {
     "cbrt-usd-try": 604_800,
 }
 _FALLBACK_RETENTION_SECONDS = 2_592_000
-_DISCOVERY_RELEVANCE_TERMS = (
+_NEWS_RELEVANCE_TERMS = (
     "central bank",
     "federal reserve",
     "interest rate",
     "monetary policy",
+    "policy rate",
+    "fomc",
     "inflation",
     "consumer price",
+    "consumer expectations",
     "nonfarm payroll",
     "unemployment",
     "treasury yield",
     "bond yield",
     "economic growth",
+    "economic outlook",
     "gross domestic product",
+    "euro area economy",
+    "liquidity management",
     "exchange rate",
     "turkish lira",
     "turkish central bank",
     "cbrt",
     "ecb",
     "gdp",
+)
+_NEWS_EXCLUSION_TERMS = (
+    "announces approval of",
+    "enforcement action",
+    "former employee",
+    "invites the public",
+    "concert",
 )
 
 
@@ -414,21 +427,24 @@ def _dedupe_releases(releases: Iterable[CollectedRelease]) -> list[CollectedRele
     return sorted(by_url.values(), key=lambda item: item.published_at, reverse=True)
 
 
-def _discovery_relevance(release: CollectedRelease) -> int:
-    if release.kind != "discovery":
-        return 100
+def _release_relevance(release: CollectedRelease) -> int:
     title = release.title.lower()
-    return sum(
+    if any(term in title for term in _NEWS_EXCLUSION_TERMS):
+        return 0
+    matches = sum(
         1
-        for term in _DISCOVERY_RELEVANCE_TERMS
+        for term in _NEWS_RELEVANCE_TERMS
         if (re.search(rf"\b{re.escape(term)}\b", title) is not None)
     )
+    if not matches:
+        return 0
+    return matches + (100 if release.kind == "official" else 0)
 
 
 def _release_rank(release: CollectedRelease) -> tuple[int, int, datetime]:
     return (
         1 if release.kind == "official" else 0,
-        _discovery_relevance(release),
+        _release_relevance(release),
         release.published_at,
     )
 
@@ -713,7 +729,7 @@ def build_snapshot(
             release
             for release in releases
             if release.url not in previous_state.seen_release_urls
-            and _discovery_relevance(release) > 0
+            and _release_relevance(release) > 0
         ),
         key=_release_rank,
         reverse=True,

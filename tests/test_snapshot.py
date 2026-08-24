@@ -192,6 +192,34 @@ class SnapshotBuilderTests(unittest.TestCase):
         self.assertIn("gdelt-relevant", story_ids)
         self.assertNotIn("gdelt-irrelevant", story_ids)
 
+    def test_generic_official_feed_items_do_not_enter_the_daily_brief(self):
+        bundle = self.bundle()
+        generic_release = CollectedRelease(
+            release_id="fed-generic-application",
+            title="Federal Reserve Board announces approval of a bank application",
+            url="https://www.federalreserve.gov/newsevents/pressreleases/orders20260823a.htm",
+            published_at=NOW - timedelta(minutes=5),
+            retrieved_at=NOW,
+            source=FED,
+            kind="official",
+        )
+        with_generic_release = CollectionBundle(
+            indicators=bundle.indicators,
+            releases=(*bundle.releases, generic_release),
+            calendar=bundle.calendar,
+            source_health=bundle.source_health,
+            histories=bundle.histories,
+        )
+
+        snapshot = build_snapshot(
+            with_generic_release, RadarState(), generated_at=NOW
+        ).snapshot
+
+        self.assertNotIn(
+            "fed-generic-application",
+            {story["id"] for story in snapshot["stories"]},
+        )
+
     def test_last_good_indicator_is_retained_as_stale(self):
         first = build_snapshot(self.bundle(), RadarState(), generated_at=NOW)
         bundle = self.bundle()
