@@ -562,7 +562,7 @@ def _commentary_section(
 
 
 def _daily_commentary(
-    conditions: Mapping[str, object],
+    conditions: Mapping[str, Any],
     stories: Sequence[Mapping[str, Any]],
     calendar: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -634,7 +634,8 @@ def _daily_commentary(
         if discovery_stories:
             news_body += (
                 f" {len(discovery_stories)} additional discovery headline"
-                f"{'s are' if len(discovery_stories) != 1 else ' is'} retained as unconfirmed context."
+                f"{'s are' if len(discovery_stories) != 1 else ' is'} retained as "
+                "unconfirmed context."
             )
     elif discovery_stories:
         lead_story = discovery_stories[0]
@@ -649,7 +650,8 @@ def _daily_commentary(
         news_headline = "No new attributable release changed the brief"
         news_body = (
             "The current run added no new official release or discovery headline. "
-            "That is an absence of new sourced material, not evidence that the news environment is quiet."
+            "That is an absence of new sourced material, not evidence that the news "
+            "environment is quiet."
         )
 
     news_evidence = [str(story["id"]) for story in (*official_stories, *discovery_stories)[:4]]
@@ -729,7 +731,8 @@ def build_snapshot(
             release
             for release in releases
             if release.url not in previous_state.seen_release_urls
-            and generated_at - timedelta(hours=24) <= release.published_at
+            and generated_at - timedelta(hours=24)
+            <= release.published_at
             <= generated_at + timedelta(minutes=5)
             and _release_relevance(release) > 0
         ),

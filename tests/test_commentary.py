@@ -14,9 +14,7 @@ def load_example_snapshot():
 
 
 def response_for(sections):
-    return json.dumps(
-        {"choices": [{"message": {"content": json.dumps(sections)}}]}
-    ).encode("utf-8")
+    return json.dumps({"choices": [{"message": {"content": json.dumps(sections)}}]}).encode("utf-8")
 
 
 class ModelCommentaryEnhancerTests(unittest.TestCase):
@@ -74,9 +72,7 @@ class ModelCommentaryEnhancerTests(unittest.TestCase):
             },
         )
         for name, evidence_ids in original_evidence.items():
-            self.assertEqual(
-                enhanced["digest"]["commentary"][name]["evidenceIds"], evidence_ids
-            )
+            self.assertEqual(enhanced["digest"]["commentary"][name]["evidenceIds"], evidence_ids)
         self.assertIsNotNone(seen_request)
         assert seen_request is not None
         self.assertEqual(
@@ -107,9 +103,7 @@ class ModelCommentaryEnhancerTests(unittest.TestCase):
         ).enhance(snapshot)
 
         self.assertIs(enhanced, snapshot)
-        self.assertEqual(
-            enhanced["digest"]["commentary"]["generation"]["mode"], "deterministic"
-        )
+        self.assertEqual(enhanced["digest"]["commentary"]["generation"]["mode"], "deterministic")
 
     def test_rejects_an_insecure_model_endpoint(self):
         with self.assertRaisesRegex(ValueError, "credential-free HTTPS"):

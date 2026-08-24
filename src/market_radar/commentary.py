@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -24,7 +24,7 @@ ModelRequest = Callable[[Request, float], bytes]
 
 def _request(request: Request, timeout: float) -> bytes:
     with urlopen(request, timeout=timeout) as response:  # noqa: S310 - URL is HTTPS-validated
-        return response.read()
+        return cast(bytes, response.read())
 
 
 @dataclass(frozen=True)

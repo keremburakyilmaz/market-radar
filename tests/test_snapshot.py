@@ -155,9 +155,7 @@ class SnapshotBuilderTests(unittest.TestCase):
             histories=bundle.histories,
         )
 
-        snapshot = build_snapshot(
-            with_old_release, RadarState(), generated_at=NOW
-        ).snapshot
+        snapshot = build_snapshot(with_old_release, RadarState(), generated_at=NOW).snapshot
 
         self.assertNotIn(
             "fed-old-fomc",
@@ -239,9 +237,7 @@ class SnapshotBuilderTests(unittest.TestCase):
             histories=bundle.histories,
         )
 
-        snapshot = build_snapshot(
-            with_generic_release, RadarState(), generated_at=NOW
-        ).snapshot
+        snapshot = build_snapshot(with_generic_release, RadarState(), generated_at=NOW).snapshot
 
         self.assertNotIn(
             "fed-generic-application",

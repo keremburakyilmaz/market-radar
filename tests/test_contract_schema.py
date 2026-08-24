@@ -515,9 +515,11 @@ class CanonicalExampleTests(unittest.TestCase):
             {"generation", "dataRead", "newsRead", "watchNext"},
         )
         self.assertEqual(commentary["generation"]["mode"], "deterministic")
-        published_evidence_ids = story_ids | {
-            item["id"] for item in self.snapshot["indicators"]
-        } | {item["id"] for item in self.snapshot["calendar"]}
+        published_evidence_ids = (
+            story_ids
+            | {item["id"] for item in self.snapshot["indicators"]}
+            | {item["id"] for item in self.snapshot["calendar"]}
+        )
         for section_name in ("dataRead", "newsRead", "watchNext"):
             section = commentary[section_name]
             self.assertTrue(set(section["evidenceIds"]).issubset(published_evidence_ids))

@@ -97,8 +97,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
     if commentary_api_key:
         commentary_enhancer = ModelCommentaryEnhancer(
             api_key=commentary_api_key,
-            base_url=os.environ.get("MARKET_RADAR_LLM_BASE_URL", "").strip()
-            or DEFAULT_BASE_URL,
+            base_url=os.environ.get("MARKET_RADAR_LLM_BASE_URL", "").strip() or DEFAULT_BASE_URL,
             model=os.environ.get("MARKET_RADAR_LLM_MODEL", "").strip() or DEFAULT_MODEL,
         ).enhance
 
