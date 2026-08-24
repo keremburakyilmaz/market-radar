@@ -180,6 +180,21 @@ def validate_snapshot(
     if unknown_digest_ids:
         issues.append(ValidationIssue("$.digest.storyIds", "must reference published stories"))
 
+    calendar_ids = {event["id"] for event in root["calendar"]}
+    commentary_evidence_ids = indicator_id_set | set(story_ids) | calendar_ids
+    commentary = root["digest"]["commentary"]
+    for section_name in ("dataRead", "newsRead", "watchNext"):
+        unknown_evidence_ids = (
+            set(commentary[section_name]["evidenceIds"]) - commentary_evidence_ids
+        )
+        if unknown_evidence_ids:
+            issues.append(
+                ValidationIssue(
+                    f"$.digest.commentary.{section_name}.evidenceIds",
+                    "must reference a published indicator, story, or calendar event",
+                )
+            )
+
     source_ids = [source["id"] for source in root["sources"]]
     if len(source_ids) != len(set(source_ids)):
         issues.append(ValidationIssue("$.sources", "source IDs must be unique"))

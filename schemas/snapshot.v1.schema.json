@@ -757,7 +757,8 @@
         "highlights",
         "storyIds",
         "itemCount",
-        "marketTags"
+        "marketTags",
+        "commentary"
       ],
       "properties": {
         "id": {
@@ -827,6 +828,77 @@
         },
         "marketTags": {
           "$ref": "#/$defs/marketTags"
+        },
+        "commentary": {
+          "$ref": "#/$defs/dailyCommentary"
+        }
+      }
+    },
+    "dailyCommentary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "dataRead",
+        "newsRead",
+        "watchNext"
+      ],
+      "properties": {
+        "generation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "method"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "deterministic",
+                "model-assisted"
+              ]
+            },
+            "method": {
+              "$ref": "#/$defs/slug"
+            },
+            "model": {
+              "$ref": "#/$defs/safeShortText"
+            }
+          }
+        },
+        "dataRead": {
+          "$ref": "#/$defs/commentarySection"
+        },
+        "newsRead": {
+          "$ref": "#/$defs/commentarySection"
+        },
+        "watchNext": {
+          "$ref": "#/$defs/commentarySection"
+        }
+      }
+    },
+    "commentarySection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "headline",
+        "body",
+        "evidenceIds"
+      ],
+      "properties": {
+        "headline": {
+          "$ref": "#/$defs/safeMediumText"
+        },
+        "body": {
+          "$ref": "#/$defs/safeLongText"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
         }
       }
     },

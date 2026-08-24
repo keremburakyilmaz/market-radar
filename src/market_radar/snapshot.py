@@ -459,6 +459,7 @@ def _digest_dict(
     conditions: MacroConditions,
     conditions_payload: Mapping[str, object],
     stories: Sequence[Mapping[str, Any]],
+    calendar: Sequence[Mapping[str, Any]],
     generated_at: datetime,
     market_tags: Sequence[str],
 ) -> dict[str, Any]:
@@ -489,6 +490,144 @@ def _digest_dict(
         "storyIds": [story["id"] for story in stories],
         "itemCount": len(stories),
         "marketTags": list(market_tags),
+        "commentary": _daily_commentary(conditions_payload, stories, calendar),
+    }
+
+
+def _commentary_section(
+    headline: str,
+    body: str,
+    evidence_ids: Sequence[str],
+) -> dict[str, Any]:
+    return {
+        "headline": headline[:240],
+        "body": body[:800],
+        "evidenceIds": list(dict.fromkeys(evidence_ids))[:12],
+    }
+
+
+def _daily_commentary(
+    conditions: Mapping[str, object],
+    stories: Sequence[Mapping[str, Any]],
+    calendar: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Turn already-published facts into a bounded daily reading note.
+
+    This is deliberately deterministic. It comments only on the score, driver,
+    story, and calendar records that will ship in the same public snapshot.
+    """
+
+    raw_drivers = conditions.get("drivers", [])
+    drivers = [item for item in raw_drivers if isinstance(item, Mapping)]
+    pressure = sorted(
+        (item for item in drivers if float(item.get("contributionPoints", 0)) > 0),
+        key=lambda item: float(item["contributionPoints"]),
+        reverse=True,
+    )
+    offsets = sorted(
+        (item for item in drivers if float(item.get("contributionPoints", 0)) < 0),
+        key=lambda item: float(item["contributionPoints"]),
+    )
+    score = float(conditions["score"])
+    label = str(conditions["label"])
+    data_evidence: list[str] = []
+    data_sentences = [f"The macro-conditions score is {score:.1f}/100, a {label} reading."]
+    if pressure:
+        lead = pressure[0]
+        data_evidence.append(str(lead["indicatorId"]))
+        data_sentences.append(
+            "{} is the largest tightening input at {:+.1f} points.".format(
+                lead["label"], float(lead["contributionPoints"])
+            )
+        )
+    if offsets:
+        lead_offset = offsets[0]
+        data_evidence.append(str(lead_offset["indicatorId"]))
+        data_sentences.append(
+            "{} offsets part of that pressure at {:+.1f} points.".format(
+                lead_offset["label"], float(lead_offset["contributionPoints"])
+            )
+        )
+    if not pressure and not offsets and drivers:
+        data_evidence.append(str(drivers[0]["indicatorId"]))
+        data_sentences.append("The scored inputs are clustered close to their neutral bands.")
+    data_sentences.append(
+        "Read the result as a description of current conditions, not a directional market call."
+    )
+    data_lead = pressure[0]["label"] if pressure else drivers[0]["label"]
+    data_headline = f"{data_lead} sets the tone in a {label} backdrop"
+
+    official_stories = [
+        story
+        for story in stories
+        if any(
+            provenance.get("sourceType") == "official"
+            for provenance in story.get("provenance", [])
+            if isinstance(provenance, Mapping)
+        )
+    ]
+    discovery_stories = [story for story in stories if story not in official_stories]
+    if official_stories:
+        lead_story = official_stories[0]
+        news_headline = str(lead_story["headline"])
+        news_body = (
+            f"{len(official_stories)} new official release"
+            f"{'s' if len(official_stories) != 1 else ''} entered the 24-hour brief. "
+            f"The lead item is '{lead_story['headline']}'. "
+            f"{lead_story['whyItMatters']}"
+        )
+        if discovery_stories:
+            news_body += (
+                f" {len(discovery_stories)} additional discovery headline"
+                f"{'s are' if len(discovery_stories) != 1 else ' is'} retained as unconfirmed context."
+            )
+    elif discovery_stories:
+        lead_story = discovery_stories[0]
+        news_headline = "Discovery headlines add context, not confirmation"
+        news_body = (
+            f"{len(discovery_stories)} new discovery headline"
+            f"{'s were' if len(discovery_stories) != 1 else ' was'} found. "
+            f"The lead title is '{lead_story['headline']}', but Market Radar has not "
+            "independently confirmed the underlying report."
+        )
+    else:
+        news_headline = "No new attributable release changed the brief"
+        news_body = (
+            "The current run added no new official release or discovery headline. "
+            "That is an absence of new sourced material, not evidence that the news environment is quiet."
+        )
+
+    news_evidence = [str(story["id"]) for story in (*official_stories, *discovery_stories)[:4]]
+
+    if calendar:
+        next_event = calendar[0]
+        watch_headline = str(next_event["title"])
+        watch_body = (
+            f"The next published high-impact event is {next_event['title']}. "
+            "Use the official calendar time shown below; the key question is whether the release "
+            "reinforces or offsets the radar's largest scored driver."
+        )
+        watch_evidence = [str(next_event["id"]), *data_evidence[:1]]
+    else:
+        watch_headline = "No official event is currently inside the watch window"
+        watch_body = (
+            "The verified calendar contains no upcoming event in the current window. "
+            "Market Radar will add one only after an official calendar source publishes it."
+        )
+        watch_evidence = data_evidence[:1]
+
+    return {
+        "generation": {
+            "mode": "deterministic",
+            "method": "daily-commentary-v1",
+        },
+        "dataRead": _commentary_section(
+            data_headline,
+            " ".join(data_sentences),
+            data_evidence,
+        ),
+        "newsRead": _commentary_section(news_headline, news_body, news_evidence),
+        "watchNext": _commentary_section(watch_headline, watch_body, watch_evidence),
     }
 
 
@@ -560,6 +699,7 @@ def build_snapshot(
     market_tags = _all_market_tags(current, releases, upcoming_events)
     snapshot_id = _snapshot_id(generated_at)
     story_payload = [_story_dict(release) for release in story_releases]
+    calendar_payload = [_calendar_dict(event) for event in upcoming_events]
 
     snapshot = {
         "schemaVersion": 1,
@@ -598,9 +738,14 @@ def build_snapshot(
         ],
         "priorityDevelopments": [_development_dict(release) for release in priority_releases],
         "stories": story_payload,
-        "calendar": [_calendar_dict(event) for event in upcoming_events],
+        "calendar": calendar_payload,
         "digest": _digest_dict(
-            conditions, conditions_payload, story_payload, generated_at, market_tags
+            conditions,
+            conditions_payload,
+            story_payload,
+            calendar_payload,
+            generated_at,
+            market_tags,
         ),
         "sources": source_payload,
     }

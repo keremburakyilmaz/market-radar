@@ -102,6 +102,20 @@ class SnapshotBuilderTests(unittest.TestCase):
         self.assertEqual(snapshot["pipeline"]["coverage"]["failedSources"], 0)
         self.assertEqual(len(snapshot["macroConditions"]["drivers"]), 3)
         self.assertEqual(snapshot["priorityDevelopments"][0]["impact"], "high")
+        commentary = snapshot["digest"]["commentary"]
+        self.assertEqual(commentary["generation"]["mode"], "deterministic")
+        self.assertIn(
+            f"{snapshot['macroConditions']['score']:.1f}/100",
+            commentary["dataRead"]["body"],
+        )
+        self.assertEqual(
+            commentary["newsRead"]["evidenceIds"],
+            [snapshot["stories"][0]["id"]],
+        )
+        self.assertEqual(
+            commentary["watchNext"]["evidenceIds"][0],
+            snapshot["calendar"][0]["id"],
+        )
         self.assertEqual(result.next_state.previous_snapshot_id, snapshot["id"])
         self.assertIn("us-treasury-10y", result.next_state.indicator_records)
         self.assertIn("2026-08-23T12", result.next_state.successful_slots)

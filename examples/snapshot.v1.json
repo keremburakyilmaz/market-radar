@@ -499,7 +499,38 @@
       "turkey",
       "rates",
       "fx"
-    ]
+    ],
+    "commentary": {
+      "generation": {
+        "mode": "deterministic",
+        "method": "daily-commentary-v1"
+      },
+      "dataRead": {
+        "headline": "Treasury yields set the tone in a restrictive backdrop",
+        "body": "The macro-conditions score is 64.0/100, a restrictive reading. The two-year Treasury yield is the largest tightening input, while the positive 2Y-10Y slope offsets part of that pressure. Read the result as a description of current conditions, not a directional market call.",
+        "evidenceIds": [
+          "us-treasury-2y",
+          "us-curve-2s10s"
+        ]
+      },
+      "newsRead": {
+        "headline": "Official rate and currency observations lead the verified context",
+        "body": "Three attributable stories explain the example score through official Treasury, Federal Reserve, and CBRT observations. They provide context for the published data rather than an independent forecast.",
+        "evidenceIds": [
+          "story-us-yield-curve",
+          "story-broad-us-dollar",
+          "story-cbrt-usdtry"
+        ]
+      },
+      "watchNext": {
+        "headline": "The U.S. CPI release is the next official test",
+        "body": "The next high-impact event in the verified calendar is the U.S. Consumer Price Index release. The key question is whether it reinforces or offsets the radar's largest scored rate driver.",
+        "evidenceIds": [
+          "calendar-us-cpi-example",
+          "us-treasury-2y"
+        ]
+      }
+    }
   },
   "sources": [
     {

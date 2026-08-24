@@ -507,6 +507,19 @@ class CanonicalExampleTests(unittest.TestCase):
         for highlight in digest["highlights"]:
             self.assertTrue(set(highlight["relatedStoryIds"]).issubset(story_ids))
 
+        commentary = digest["commentary"]
+        self.assertEqual(
+            set(commentary),
+            {"generation", "dataRead", "newsRead", "watchNext"},
+        )
+        self.assertEqual(commentary["generation"]["mode"], "deterministic")
+        published_evidence_ids = story_ids | {
+            item["id"] for item in self.snapshot["indicators"]
+        } | {item["id"] for item in self.snapshot["calendar"]}
+        for section_name in ("dataRead", "newsRead", "watchNext"):
+            section = commentary[section_name]
+            self.assertTrue(set(section["evidenceIds"]).issubset(published_evidence_ids))
+
     def test_calendar_is_official_and_uses_unambiguous_instants(self) -> None:
         source_ids = {source["id"] for source in self.snapshot["sources"]}
         for event in self.snapshot["calendar"]:
