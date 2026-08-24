@@ -33,6 +33,26 @@ _FRESHNESS_SECONDS = {
     "cbrt-usd-try": 604_800,
 }
 _FALLBACK_RETENTION_SECONDS = 2_592_000
+_DISCOVERY_RELEVANCE_TERMS = (
+    "central bank",
+    "federal reserve",
+    "interest rate",
+    "monetary policy",
+    "inflation",
+    "consumer price",
+    "nonfarm payroll",
+    "unemployment",
+    "treasury yield",
+    "bond yield",
+    "economic growth",
+    "gross domestic product",
+    "exchange rate",
+    "turkish lira",
+    "turkish central bank",
+    "cbrt",
+    "ecb",
+    "gdp",
+)
 
 
 @dataclass(frozen=True)
@@ -394,6 +414,25 @@ def _dedupe_releases(releases: Iterable[CollectedRelease]) -> list[CollectedRele
     return sorted(by_url.values(), key=lambda item: item.published_at, reverse=True)
 
 
+def _discovery_relevance(release: CollectedRelease) -> int:
+    if release.kind != "discovery":
+        return 100
+    title = release.title.lower()
+    return sum(
+        1
+        for term in _DISCOVERY_RELEVANCE_TERMS
+        if (re.search(rf"\b{re.escape(term)}\b", title) is not None)
+    )
+
+
+def _release_rank(release: CollectedRelease) -> tuple[int, int, datetime]:
+    return (
+        1 if release.kind == "official" else 0,
+        _discovery_relevance(release),
+        release.published_at,
+    )
+
+
 def _source_health_status(status: str) -> str:
     normalized = status.lower()
     if normalized in {"ok", "healthy", "fresh"}:
@@ -669,9 +708,16 @@ def build_snapshot(
     conditions = score_macro_conditions(current, histories)
     conditions_payload = conditions.public_dict()
     releases = _dedupe_releases(bundle.releases)
-    new_releases = [
-        release for release in releases if release.url not in previous_state.seen_release_urls
-    ]
+    new_releases = sorted(
+        (
+            release
+            for release in releases
+            if release.url not in previous_state.seen_release_urls
+            and _discovery_relevance(release) > 0
+        ),
+        key=_release_rank,
+        reverse=True,
+    )
     priority_releases = [release for release in new_releases if release.kind == "official"][
         :MAX_DEVELOPMENTS
     ]

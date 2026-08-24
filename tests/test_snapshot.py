@@ -26,6 +26,12 @@ FED = SourceDescriptor(
     "https://fred.stlouisfed.org/series/DTWEXBGS",
     "public-domain-with-attribution",
 )
+GDELT = SourceDescriptor(
+    "gdelt-global-discovery",
+    "GDELT discovery",
+    "https://www.gdeltproject.org/",
+    "open-dataset-discovery-only",
+)
 
 
 def observed(indicator_id, value, source=TREASURY, days_ago=1):
@@ -146,6 +152,45 @@ class SnapshotBuilderTests(unittest.TestCase):
         result = build_snapshot(reduced, RadarState(), generated_at=NOW)
         self.assertEqual(result.snapshot["pipeline"]["status"], "degraded")
         self.assertEqual(result.snapshot["pipeline"]["coverage"]["failedSources"], 1)
+
+    def test_discovery_news_requires_specific_macro_relevance(self):
+        bundle = self.bundle()
+        relevant = CollectedRelease(
+            release_id="gdelt-relevant",
+            title="Federal Reserve interest rate outlook returns to focus",
+            url="https://example.com/federal-reserve-outlook",
+            published_at=NOW - timedelta(minutes=10),
+            retrieved_at=NOW,
+            source=GDELT,
+            publisher="example.com",
+            kind="discovery",
+        )
+        irrelevant = CollectedRelease(
+            release_id="gdelt-irrelevant",
+            title="Meeting employment demand is a challenge for education supply",
+            url="https://example.com/education-employment",
+            published_at=NOW - timedelta(minutes=5),
+            retrieved_at=NOW,
+            source=GDELT,
+            publisher="example.com",
+            kind="discovery",
+        )
+        with_discovery = CollectionBundle(
+            indicators=bundle.indicators,
+            releases=(*bundle.releases, relevant, irrelevant),
+            calendar=bundle.calendar,
+            source_health=(
+                *bundle.source_health,
+                CollectedSourceHealth(GDELT, "ok", NOW, 2),
+            ),
+            histories=bundle.histories,
+        )
+
+        snapshot = build_snapshot(with_discovery, RadarState(), generated_at=NOW).snapshot
+        story_ids = {story["id"] for story in snapshot["stories"]}
+
+        self.assertIn("gdelt-relevant", story_ids)
+        self.assertNotIn("gdelt-irrelevant", story_ids)
 
     def test_last_good_indicator_is_retained_as_stale(self):
         first = build_snapshot(self.bundle(), RadarState(), generated_at=NOW)
