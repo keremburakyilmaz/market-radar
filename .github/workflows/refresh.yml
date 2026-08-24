@@ -37,6 +37,9 @@ jobs:
       R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
       R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      MARKET_RADAR_LLM_API_KEY: ${{ secrets.MARKET_RADAR_LLM_API_KEY }}
+      MARKET_RADAR_LLM_BASE_URL: ${{ vars.MARKET_RADAR_LLM_BASE_URL }}
+      MARKET_RADAR_LLM_MODEL: ${{ vars.MARKET_RADAR_LLM_MODEL }}
 
     steps:
       - name: Checkout
@@ -84,6 +87,7 @@ jobs:
           MR_REDACT_PUBLIC_SECRET_KEY: ${{ secrets.R2_PUBLIC_SECRET_ACCESS_KEY }}
           MR_REDACT_STATE_ACCESS_KEY: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
           MR_REDACT_STATE_SECRET_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
+          MR_REDACT_LLM_API_KEY: ${{ secrets.MARKET_RADAR_LLM_API_KEY }}
         run: |
           python - <<'PY'
           import os

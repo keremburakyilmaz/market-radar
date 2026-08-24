@@ -109,6 +109,8 @@ Configure these variables in both environments, or as repository variables:
 | `R2_ENDPOINT` | Optional explicit S3 endpoint; leave empty to derive it from the account ID |
 | `R2_PUBLIC_BUCKET` | `market-radar-public` |
 | `R2_STATE_BUCKET` | `market-radar-state` |
+| `MARKET_RADAR_LLM_BASE_URL` | Optional OpenAI-compatible HTTPS base URL; defaults to NVIDIA NIM when unset |
+| `MARKET_RADAR_LLM_MODEL` | Optional commentary model; defaults to `meta/llama-3.3-70b-instruct` when unset |
 
 Configure these secrets in `market-radar-production`:
 
@@ -119,10 +121,19 @@ Configure these secrets in `market-radar-production`:
 | `R2_STATE_ACCESS_KEY_ID` | State-bucket token access-key ID |
 | `R2_STATE_SECRET_ACCESS_KEY` | State-bucket token secret |
 | `FRED_API_KEY` | FRED API key; never exposed in public output |
+| `MARKET_RADAR_LLM_API_KEY` | Optional server-side commentary key; omit for deterministic commentary |
 
 Configure the four R2 secrets in `market-radar-operations` as well. The
 workflow exposes state-bucket credentials to pause/resume steps and adds the
 public-bucket credentials only to rollback. It never receives `FRED_API_KEY`.
+
+The refresh workflow creates the data, news, and watch-next commentary during
+the scheduled run. Without `MARKET_RADAR_LLM_API_KEY`, the bounded deterministic
+version is published. With the key, the configured model may rewrite only the
+prose; deterministic evidence IDs remain attached, unsupported numbers fail
+closed, and the original commentary is retained whenever the model is
+unavailable or returns an invalid response. No model credential reaches R2 or
+the website.
 
 The weekly smoke workflow does not enter the production environment and never
 receives R2 credentials. If FRED coverage is desired there, add a separate

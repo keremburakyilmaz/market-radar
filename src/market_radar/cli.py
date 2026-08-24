@@ -13,6 +13,11 @@ from typing import Any
 
 from market_radar.canonical import canonical_json_bytes, sha256_hex
 from market_radar.collector import collect_sources
+from market_radar.commentary import (
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+    ModelCommentaryEnhancer,
+)
 from market_radar.domain import CollectionBundle
 from market_radar.operations import OperationsService
 from market_radar.pipeline import PipelineRunner
@@ -87,6 +92,15 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
     fixed_time: datetime | None = parse_utc(args.as_of) if args.as_of else None
     clock = (lambda: fixed_time) if fixed_time is not None else utc_now
     fred_api_key = os.environ.get("FRED_API_KEY")
+    commentary_api_key = os.environ.get("MARKET_RADAR_LLM_API_KEY", "").strip()
+    commentary_enhancer = None
+    if commentary_api_key:
+        commentary_enhancer = ModelCommentaryEnhancer(
+            api_key=commentary_api_key,
+            base_url=os.environ.get("MARKET_RADAR_LLM_BASE_URL", "").strip()
+            or DEFAULT_BASE_URL,
+            model=os.environ.get("MARKET_RADAR_LLM_MODEL", "").strip() or DEFAULT_MODEL,
+        ).enhance
 
     def collector(at: datetime) -> CollectionBundle:
         return collect_sources(at=at, fred_api_key=fred_api_key)
@@ -102,6 +116,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
             publisher=Publisher(public_store),
             state_repository=StateRepository(state_store),
             control_repository=PublicationControlRepository(state_store),
+            commentary_enhancer=commentary_enhancer,
             clock=clock,
         )
     else:
@@ -117,6 +132,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
             publisher=Publisher(local_store),
             control_repository=control_repository,
             local_state_path=args.state_file,
+            commentary_enhancer=commentary_enhancer,
             clock=clock,
         )
 

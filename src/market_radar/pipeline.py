@@ -55,6 +55,7 @@ class PipelineRunner:
         state_repository: StateRepository | None = None,
         control_repository: PublicationControlRepository | None = None,
         local_state_path: Path | None = None,
+        commentary_enhancer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if state_repository is not None and local_state_path is not None:
@@ -65,6 +66,7 @@ class PipelineRunner:
         self.state_repository = state_repository
         self.control_repository = control_repository
         self.local_state_path = Path(local_state_path) if local_state_path else None
+        self.commentary_enhancer = commentary_enhancer
         self.clock = clock
 
     def run(
@@ -121,14 +123,17 @@ class PipelineRunner:
             run_id=run_id,
             successful_slot=slot if publish else None,
         )
-        validate_snapshot(build.snapshot, now=completed_at, enforce_publish_time=publish)
-        candidate_path = self._write_candidate(build.snapshot)
+        snapshot = build.snapshot
+        if self.commentary_enhancer is not None:
+            snapshot = self.commentary_enhancer(snapshot)
+        validate_snapshot(snapshot, now=completed_at, enforce_publish_time=publish)
+        candidate_path = self._write_candidate(snapshot)
 
         publish_result = None
         if publish:
             if self.publisher is None:
                 raise PipelineError("publication was requested without an object-store publisher")
-            publish_result = self.publisher.publish(build.snapshot)
+            publish_result = self.publisher.publish(snapshot)
             self._smoke_published_snapshot(publish_result)
             self._save_state(
                 build.next_state,
@@ -142,9 +147,10 @@ class PipelineRunner:
             "status": "success",
             "published": publish,
             "slot": slot,
-            "generatedAt": build.snapshot["generatedAt"],
-            "pipelineStatus": build.snapshot["pipeline"]["status"],
-            "sourceCoverage": build.snapshot["pipeline"]["coverage"],
+            "generatedAt": snapshot["generatedAt"],
+            "pipelineStatus": snapshot["pipeline"]["status"],
+            "sourceCoverage": snapshot["pipeline"]["coverage"],
+            "commentaryMode": snapshot["digest"]["commentary"]["generation"]["mode"],
             "snapshotKey": publish_result.snapshot_key if publish_result else None,
             "snapshotSha256": publish_result.snapshot_sha256 if publish_result else None,
         }
@@ -155,7 +161,7 @@ class PipelineRunner:
             publish,
             candidate_path,
             report_path,
-            build.snapshot,
+            snapshot,
             publish_result,
         )
 

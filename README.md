@@ -18,6 +18,8 @@ official/public sources
   -> normalize and sanitize
   -> restore eligible last-good observations
   -> score transparent macro conditions
+  -> compile data, news, and watch-next commentary from published evidence
+  -> optionally let a server-side model rewrite only that bounded prose
   -> validate the closed v1 schema and semantic invariants
   -> write an immutable, content-addressed snapshot
   -> conditionally advance v1/latest.json
@@ -32,6 +34,13 @@ The public bucket contains only:
 Private checkpoints, credentials, raw responses, internal error details, and
 provider keys never enter the public contract. Generated data is stored in R2;
 the refresh workflow never commits or pushes it to Git.
+
+Every snapshot includes a readable daily briefing even when no model is
+configured. The deterministic version cites published indicator, story, and
+calendar IDs. When `MARKET_RADAR_LLM_API_KEY` is present, an OpenAI-compatible
+model may rewrite only the three commentary sections. Evidence IDs remain
+fixed, unsupported numbers are rejected, and any model or network failure
+falls back to the deterministic briefing without affecting the score.
 
 The schemas and canonical examples live in [`schemas/`](schemas/) and
 [`examples/`](examples/).

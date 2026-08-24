@@ -101,6 +101,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("2026-08-23T12", state["successfulSlots"])
         report = json.loads(outcome.report_path.read_text())
         self.assertEqual(report["status"], "success")
+        self.assertEqual(report["commentaryMode"], "deterministic")
         self.assertNotIn("FRED_API_KEY", str(report))
 
     def test_repeated_successful_slot_is_a_no_op(self):
