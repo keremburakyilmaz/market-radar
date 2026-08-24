@@ -286,6 +286,8 @@ class SchemaShapeTests(unittest.TestCase):
             definitions["officialSource"]["properties"]["sourceType"]["const"],
             "official",
         )
+        self.assertIn("commentary", definitions["digest"]["properties"])
+        self.assertNotIn("commentary", definitions["digest"]["required"])
         indicator_required = set(definitions["indicator"]["required"])
         self.assertTrue(
             {

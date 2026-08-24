@@ -15,6 +15,12 @@ class SnapshotValidationTests(unittest.TestCase):
     def test_valid_snapshot_is_accepted(self):
         self.assertEqual(validate_snapshot(valid_snapshot())["schemaVersion"], 1)
 
+    def test_pre_commentary_v1_snapshot_remains_valid_for_rollback(self):
+        snapshot = valid_snapshot()
+        del snapshot["digest"]["commentary"]
+
+        self.assertEqual(validate_snapshot(snapshot), snapshot)
+
     def test_unknown_schema_and_unsafe_url_are_rejected(self):
         candidate = valid_snapshot()
         candidate["schemaVersion"] = 2

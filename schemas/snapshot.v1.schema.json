@@ -757,8 +757,7 @@
         "highlights",
         "storyIds",
         "itemCount",
-        "marketTags",
-        "commentary"
+        "marketTags"
       ],
       "properties": {
         "id": {
